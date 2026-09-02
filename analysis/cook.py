@@ -164,7 +164,9 @@ def _discovered(
                 continue
             if target in before.attacks(square):
                 continue  # l'attaque existait déjà
-            if move.from_square not in chess.between(square, target):
+            # `chess.between` renvoie un masque de bits, pas un SquareSet :
+            # l'appartenance se teste par intersection.
+            if not chess.between(square, target) & chess.BB_SQUARES[move.from_square]:
                 continue
             if found.piece_type == chess.KING:
                 themes.update({"discoveredAttack", "discoveredCheck"})

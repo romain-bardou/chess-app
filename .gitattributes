@@ -1,0 +1,15 @@
+# Un seul style de fin de ligne partout : LF dans le dépôt comme dans la copie
+# de travail. Le script d'analyse et les workflows tournent sur Ubuntu, et
+# toute la chaîne Node/Python s'accommode du LF sous Windows.
+* text=auto eol=lf
+
+# Fichiers binaires : jamais de conversion.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary

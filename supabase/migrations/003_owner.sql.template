@@ -1,0 +1,12 @@
+-- ============================================================
+-- 003_owner.sql — À exécuter UNE FOIS, après la création du compte
+-- ============================================================
+-- 1. Créer le compte dans Supabase (Authentication > Users > Add user),
+--    email + mot de passe.
+-- 2. Copier son UUID, le coller ci-dessous, puis exécuter ce script dans le
+--    SQL Editor. Renommer le fichier en 003_owner.sql (il est ignoré par git
+--    pour ne pas versionner l'UUID).
+
+insert into app_owner (id, user_id)
+values (true, 'a4fd1737-bea9-4732-979b-a84aa2d099d4')
+on conflict (id) do update set user_id = excluded.user_id;

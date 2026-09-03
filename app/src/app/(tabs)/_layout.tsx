@@ -1,4 +1,4 @@
-import { Tabs } from 'expo-router/js-tabs';
+import { Tabs } from 'expo-router';
 
 import { t } from '@/lib/i18n';
 import { Colors, Typography } from '@/theme/atelier';

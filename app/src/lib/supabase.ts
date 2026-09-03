@@ -4,12 +4,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
 
-const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const url = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim();
+const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim();
 
 if (!url || !anonKey) {
   throw new Error(
     'EXPO_PUBLIC_SUPABASE_URL et EXPO_PUBLIC_SUPABASE_ANON_KEY manquants : copier .env.example en .env.'
+  );
+}
+
+// `supabase-js` ajoute lui-même le chemin selon l'appel (`/auth/v1/token`,
+// `/rest/v1/<table>`). Une URL qui en contient déjà un produit une erreur
+// « invalid path specified in request url » au moment de la connexion, sans
+// indiquer d'où elle vient — d'où ce contrôle au démarrage.
+if (!/^https?:\/\/[^/]+\/?$/.test(url)) {
+  throw new Error(
+    `EXPO_PUBLIC_SUPABASE_URL doit être l'hôte seul, sans chemin : ` +
+      `https://<ref>.supabase.co (Settings > Data API > Project URL). Reçu : ${url}`
   );
 }
 

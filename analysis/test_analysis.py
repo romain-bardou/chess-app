@@ -6,9 +6,11 @@ Lancement : `python analysis/test_analysis.py` (ou `pytest analysis`).
 from __future__ import annotations
 
 import random
+from datetime import datetime, timezone
 
 import chess
 
+import chesscom
 import classify
 from classify import Evaluation
 from config import _api_url
@@ -166,6 +168,88 @@ def test_cook_survives_an_illegal_tail() -> None:
     board = chess.Board()
     solution = [chess.Move.from_uci("e2e4"), chess.Move.from_uci("a1a8")]
     assert cook(board, solution, Evaluation(cp=30, mate=None))
+
+
+# ----------------------------------------------------------------------
+# Import chess.com
+# ----------------------------------------------------------------------
+
+_PGN = '\n'.join(
+    [
+        '[Event "Live Chess"]',
+        '[White "ThirdyVoid"]',
+        '[Black "Ormaniba"]',
+        '[Result "0-1"]',
+        '[ECO "B12"]',
+        '[ECOUrl "https://www.chess.com/openings/Caro-Kann-Defense-2.d4-d5"]',
+        "",
+        "1. e4 c6 2. d4 d5 0-1",
+        "",
+    ]
+)
+
+
+def _game(**overrides) -> dict:
+    game = {
+        "url": "https://www.chess.com/game/live/173775544356",
+        "pgn": _PGN,
+        "end_time": 1788150663,
+        "time_class": "rapid",
+        "rules": "chess",
+        "white": {"username": "ThirdyVoid", "result": "checkmated"},
+        "black": {"username": "Ormaniba", "result": "win"},
+        "eco": "https://www.chess.com/openings/Caro-Kann-Defense-2.d4-d5",
+    }
+    game.update(overrides)
+    return game
+
+
+def test_archives_resume_at_the_month_of_the_last_known_game() -> None:
+    archives = [
+        "https://api.chess.com/pub/player/x/games/2026/07",
+        "https://api.chess.com/pub/player/x/games/2026/08",
+        "https://api.chess.com/pub/player/x/games/2026/09",
+    ]
+    # Le mois de la dernière partie est refait : d'autres parties du même mois
+    # peuvent avoir été jouées depuis.
+    since = datetime(2026, 8, 31, tzinfo=timezone.utc)
+    assert chesscom.archives_to_fetch(archives, since) == archives[1:]
+    assert chesscom.archives_to_fetch(archives, None) == archives
+    # Le tri est celui des mois, pas celui des chaînes.
+    assert chesscom.archives_to_fetch(list(reversed(archives)), None) == archives
+
+
+def test_game_row_maps_my_colour_and_result() -> None:
+    row = chesscom.to_game_row(_game(), "ormaniba")
+    assert row["color_played"] == "black"
+    assert row["result"] == "win"
+    assert row["eco"] == "B12"
+    assert row["opening_name"] == "Caro Kann Defense 2.d4 d5"
+    assert row["played_at"].startswith("2026-08-31")
+    # Le trigger `games_set_user_id` s'en charge : l'envoyer serait une erreur.
+    assert "user_id" not in row
+
+    lost = chesscom.to_game_row(
+        _game(black={"username": "Ormaniba", "result": "resigned"}), "ormaniba"
+    )
+    assert lost["result"] == "loss"
+
+    drawn = chesscom.to_game_row(
+        _game(black={"username": "Ormaniba", "result": "repetition"}), "ormaniba"
+    )
+    assert drawn["result"] == "draw"
+
+
+def test_game_row_rejects_what_it_cannot_map() -> None:
+    assert chesscom.to_game_row(_game(), "quelquun-dautre") is None
+    assert chesscom.to_game_row(_game(pgn=None), "ormaniba") is None
+    assert chesscom.to_game_row(_game(end_time=None), "ormaniba") is None
+
+
+def test_importable_filters_time_class_and_variants() -> None:
+    assert chesscom.importable(_game(), ["rapid"])
+    assert not chesscom.importable(_game(time_class="bullet"), ["rapid"])
+    assert not chesscom.importable(_game(rules="chess960"), ["rapid"])
 
 
 if __name__ == "__main__":

@@ -53,6 +53,38 @@ class Supabase:
         return self._owner_id
 
     # ------------------------------------------------------------------
+    def latest_played_at(self) -> Optional[str]:
+        """Date de la partie la plus récente en base, ou None si table vide.
+
+        Sert de point de reprise à l'import : inutile de retélécharger les
+        archives mensuelles antérieures.
+        """
+        response = self._client.get(
+            "/games",
+            params={"select": "played_at", "order": "played_at.desc", "limit": 1},
+        )
+        response.raise_for_status()
+        rows = response.json()
+        return rows[0]["played_at"] if rows else None
+
+    def insert_games(self, rows: List[Dict[str, Any]]) -> int:
+        """Insère les parties absentes. Retourne le nombre effectivement créé.
+
+        Les doublons sont ignorés sur `chess_com_url` : réimporter un mois déjà
+        traité ne remet pas `analyzed` à false et ne duplique rien.
+        """
+        if not rows:
+            return 0
+        response = self._client.post(
+            "/games",
+            json=rows,
+            params={"on_conflict": "chess_com_url", "select": "id"},
+            headers={"Prefer": "return=representation,resolution=ignore-duplicates"},
+        )
+        response.raise_for_status()
+        return len(response.json())
+
+    # ------------------------------------------------------------------
     def pending_games(self, limit: int) -> List[Dict[str, Any]]:
         response = self._client.get(
             "/games",

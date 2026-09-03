@@ -4,15 +4,21 @@ Import des parties chess.com, détection des erreurs avec Stockfish, révision e
 puzzles avec répétition espacée (FSRS), statistiques par thème tactique.
 
 ```
-chess.com API → Make → Supabase (Postgres)
+GitHub Actions — .github/workflows/pipeline.yml, toutes les 6 h
                             │
-              GitHub Actions (cron quotidien)
-              Python + python-chess + Stockfish
-              → classifie, tague, écrit dans `mistakes`
+   import_games.py          │          main.py
+   chess.com API  ──────────┼────────▶ python-chess + Stockfish
+   → table `games`          │          → classifie, tague, écrit
+                            │            dans `mistakes`
+                            │
+                   Supabase (Postgres)
                             │
                     App Expo (React Native)
                     → file de révision FSRS + stats
 ```
+
+Aucune étape manuelle : le même run importe les parties de la journée, puis
+analyse tout ce qui reste en `analyzed = false`.
 
 ## Structure
 
@@ -21,7 +27,7 @@ chess.com API → Make → Supabase (Postgres)
 | `app/` | Application Expo (React Native, TypeScript) |
 | `analysis/` | Script d'analyse Python (Stockfish, python-chess) |
 | `supabase/migrations/` | Schéma SQL |
-| `.github/workflows/` | Cron d'analyse + tests |
+| `.github/workflows/` | Cron import + analyse, et tests |
 
 ## Mise en route
 
@@ -51,8 +57,21 @@ Secrets à créer dans le dépôt GitHub (Settings → Secrets → Actions) :
 | `SUPABASE_URL` | URL du projet Supabase |
 | `SUPABASE_SERVICE_ROLE_KEY` | **Secret key** `sb_secret_…` (ou la clé `service_role` de l'onglet legacy). Jamais dans l'app. |
 
-Le workflow `analyse.yml` tourne tous les jours à 04h20 UTC, et peut être
-déclenché à la main (`workflow_dispatch`) avec un nombre de parties à traiter.
+Le workflow `pipeline.yml` tourne toutes les 6 heures (à 20 min passées). Il
+importe d'abord les nouvelles parties chess.com, puis analyse celles qui restent
+en `analyzed = false`. Il peut aussi être déclenché à la main
+(`workflow_dispatch`) avec un nombre de parties à traiter.
+
+Le pseudo chess.com n'est pas un secret : il vit dans le workflow
+(`CHESS_COM_USERNAME`), avec `IMPORT_TIME_CLASSES` pour les cadences importées.
+
+Une panne de l'API chess.com ne bloque pas l'analyse : l'étape d'import est en
+`continue-on-error`, l'analyse tourne quand même, et le job finit rouge pour que
+l'échec remonte par mail.
+
+**GitHub désactive les crons d'un dépôt public resté 60 jours sans activité**
+(un mail d'avertissement arrive avant). Si le pipeline s'arrête tout seul, c'est
+la première chose à vérifier : onglet Actions → le workflow → « Enable ».
 
 En local :
 
@@ -65,7 +84,12 @@ cd analysis && python test_analysis.py
 ```
 
 Pour un run réel en local il faut un binaire Stockfish et les variables
-`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STOCKFISH_PATH`.
+`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STOCKFISH_PATH`. Les deux étapes
+du pipeline se lancent séparément :
+
+```bash
+cd analysis && CHESS_COM_USERNAME=ormaniba python import_games.py && python main.py
+```
 
 ### 3. App
 
@@ -94,12 +118,32 @@ cd app && npm install && npx expo start
 
 Expo Go suffit pour cette V1 (aucune fonctionnalité native hors modules Expo).
 
+**Le SDK est volontairement figé au 54.** Expo Go n'embarque qu'une seule
+version du SDK à la fois : monter ce projet plus haut casserait l'autre app
+installée sur le même téléphone. Ne pas lancer `npx expo install --fix` après
+une montée de version d'Expo sans vérifier ce point. `npx expo install --check`
+doit répondre « Dependencies are up to date ».
+
 ## Import chess.com
 
-Géré par un scénario Make côté utilisateur : `ormaniba`, rapid uniquement,
-`https://api.chess.com/pub/player/ormaniba/games/archives` puis chaque mois.
-Le scénario n'a qu'à insérer dans `games` ; `user_id` est rempli automatiquement
-par un trigger à partir de `app_owner`.
+`analysis/import_games.py`, via l'API publique (aucune clé, mais un User-Agent
+explicite est obligatoire, sinon 403).
+
+L'import est incrémental et idempotent :
+
+1. on lit la date de la partie la plus récente en base ;
+2. on ne télécharge que les archives mensuelles à partir de ce mois inclus
+   (le mois courant peut avoir gagné des parties depuis le dernier run) ;
+3. on garde `rules = chess` et les cadences de `IMPORT_TIME_CLASSES` ;
+4. l'insertion ignore les doublons sur `chess_com_url`, donc réimporter un mois
+   déjà traité ne remet aucune partie à analyser et ne duplique rien.
+
+`user_id` n'est pas envoyé : le trigger `games_set_user_id` le remplit depuis
+`app_owner`.
+
+Le scénario Make de la V1 n'est plus nécessaire. S'il tourne encore, il fait
+double emploi sans casser quoi que ce soit (même contrainte d'unicité), mais
+autant le désactiver.
 
 ## Classification des coups
 

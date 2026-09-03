@@ -6,7 +6,7 @@
 -- Store, la clé anon est publique : sans `user_id` + RLS, n'importe qui
 -- pourrait lire/écrire les données. On ajoute donc `user_id` partout, avec un
 -- trigger qui le remplit automatiquement pour que les insertions externes
--- (scénario Make, script d'analyse) n'aient pas à s'en soucier.
+-- (script d'import, script d'analyse) n'aient pas à s'en soucier.
 
 create extension if not exists "pgcrypto";
 
@@ -14,7 +14,7 @@ create extension if not exists "pgcrypto";
 -- Propriétaire unique de l'instance
 -- ------------------------------------------------------------
 -- Une seule ligne. Sert de valeur de repli pour `user_id` quand l'insertion
--- vient d'un contexte sans session utilisateur (service role : Make, cron).
+-- vient d'un contexte sans session utilisateur (service role : cron GitHub).
 create table if not exists app_owner (
   id boolean primary key default true check (id),
   user_id uuid not null references auth.users(id) on delete cascade

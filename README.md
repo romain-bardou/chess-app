@@ -180,6 +180,20 @@ coup, l'adversaire répond tout seul, jusqu'au gain. Le premier coup accepte
 n'importe quelle continuation non sanctionnée (`accepted_moves`) ; les suivants
 suivent la ligne, seul endroit où la suite est connue.
 
+Beaucoup de cartes tiennent malgré tout en un seul coup, et c'est normal : la
+ligne s'arrête au premier point de repos où le gain est acquis. Une pièce en
+prise se ramasse en un coup. Les combinaisons apparaissent quand le gain se
+fait attendre — sacrifice puis récupération, ou mat forcé, qui garde toute la
+ligne jusqu'au mat.
+
+La carte s'ouvre sur la position d'avant le dernier coup adverse, qui se joue
+tout seul sous les yeux du joueur avant que l'échiquier ne réponde au doigt :
+c'est ce coup qui a créé la faiblesse, le voir arriver vaut mieux que le
+déduire d'un surlignage. La position de départ voyage dans `previous_move`
+(`{san, uci, fen}`) : un coup ne se défait pas côté app, la pièce prise est
+introuvable. Le chrono ne part qu'une fois ce coup posé. Les cartes créées
+avant, sans cette FEN, se posent directement sur la position à résoudre.
+
 `SOLUTION_PLIES` (12 par défaut) borne la longueur examinée.
 
 ## Ordre de la file
@@ -246,6 +260,26 @@ ratée reste à l'écran, et un bouton « Dérouler la variante » lance la lect
 automatiquement », rangé sous la variante et conservé d'une session à l'autre
 (`app/src/lib/settings.ts`), rétablit l'ancien comportement.
 
+## Après l'erreur, un brouillon
+
+Le coup raté n'est pas escamoté : il se joue sur l'échiquier, animé comme les
+autres, et devient le premier coup de la variante affichée. Si c'est le coup
+de la partie, la réfutation enregistrée le prolonge ; sinon la variante s'arrête
+là, faute de moteur embarqué pour la continuer.
+
+L'échiquier reste alors manipulable. On recule d'un coup avec les flèches, on
+joue autre chose, et la position suit — des deux camps, puisqu'on joue toujours
+celui qui a le trait. Jouer à la main remplace la suite affichée : deux
+continuations concurrentes dans la même liste ne voudraient rien dire.
+« Revenir à la variante » rend la ligne enregistrée, et n'apparaît que si on
+s'en est écarté.
+
+Trois puces choisissent ce que l'échiquier montre — « Ma tentative », « La
+solution », « La réfutation » — au lieu des boutons qui faisaient basculer d'une
+ligne à l'autre. Chacune repart de sa propre position : une erreur commise au
+troisième coup d'une solution ouvre sa variante là où elle a été commise, pas au
+début de la carte.
+
 Les motifs tactiques (`analysis/cook.py`) sont adaptés de
 `lichess-org/lichess-puzzler`, avec les mêmes clés que Lichess (`fork`, `pin`,
 `backRankMate`…) ; la traduction en français vit dans `app/src/locales/fr.json`.
@@ -281,6 +315,7 @@ entre Easy, Good et Hard.
 | Pièces d'échecs dessinées sur mesure | Les jeux libres courants (Cburnett) sont sous licence à attribution ; contrainte inutile pour une publication App Store. |
 | Les 8 premiers demi-coups ne sont pas analysés (`SKIP_FIRST_PLIES`) | Les écarts en ouverture relèvent du répertoire, pas du calcul. Réglable par variable d'environnement. |
 | Colonnes `previous_move`, `solution`, `solution_gain` (migration 005) | Le dernier coup adverse situe la position, et un puzzle doit se terminer sur un gain concret plutôt que sur un seul coup « attendu ». |
+| `previous_move` porte aussi la FEN d'avant le coup | Rejouer ce coup dans l'app demande la position de départ ; la reconstruire à l'envers est impossible sans savoir ce qui a été pris. Champ ajouté dans le `jsonb`, donc sans nouvelle migration. |
 
 ## Hors périmètre V1
 

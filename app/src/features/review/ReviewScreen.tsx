@@ -1,8 +1,8 @@
-import type { Square } from 'chess.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { Chessboard, type BoardMove } from '@/chess/Chessboard';
+import { uciSquares } from '@/chess/play';
 import {
   AppText,
   Button,
@@ -29,19 +29,20 @@ const MAX_BOARD_SIZE = 440;
 
 type Phase = 'solving' | 'correct' | 'wrong';
 
-/** Ligne rejouée après un échec : la punition du coup de partie, ou la solution. */
-type ReplaySource = 'punishment' | 'solution';
+/**
+ * Variante montrée après un échec : mon coup, la réfutation du coup de partie,
+ * ou la solution.
+ */
+type ReplaySource = 'attempt' | 'punishment' | 'solution';
 
 interface Attempt {
   correct: boolean;
   gradeLabel: string;
   playedSan: string;
-}
-
-/** Cases d'un coup en UCI, pour surligner le dernier coup adverse. */
-function uciSquares(uci: string | undefined): { from: Square; to: Square } | null {
-  if (!uci || uci.length < 4) return null;
-  return { from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square };
+  /** Le coup tenté, pour l'ouvrir comme premier coup de la variante. */
+  move: LineMove | null;
+  /** D'où il a été joué : au milieu d'une ligne, ce n'est plus la carte. */
+  fen: string;
 }
 
 /** Ce que rapporte la solution, en une ligne. */
@@ -94,31 +95,56 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
     setReplaySource('punishment');
     setSaveError(null);
     setElapsed(0);
-    startedAt.current = Date.now();
   }, [current?.id]);
 
+  // Le chrono part quand la position à résoudre est posée, pas pendant que le
+  // dernier coup adverse se joue : cette seconde-là n'est pas de la réflexion.
   useEffect(() => {
-    if (phase !== 'solving' || !current) return;
+    if (!run.ready) return;
+    setElapsed(0);
+    startedAt.current = Date.now();
+  }, [run.ready, current?.id]);
+
+  useEffect(() => {
+    if (phase !== 'solving' || !current || !run.ready) return;
     const timer = setInterval(
       () => setElapsed(Math.floor((Date.now() - startedAt.current) / 1000)),
       1000
     );
     return () => clearInterval(timer);
-  }, [phase, current]);
+  }, [phase, current, run.ready]);
 
-  const replayMoves = useMemo<LineMove[]>(() => {
-    if (!current) return [];
-    if (replaySource === 'solution') return current.solution ?? [];
+  const replayLine = useMemo(() => {
+    if (!current) return { fen: START_FEN, moves: [] as LineMove[], step: 0 };
+    if (replaySource === 'solution') {
+      return { fen: current.fen, moves: current.solution ?? [], step: 0 };
+    }
+    // Mon coup ouvre la variante : on le voit se poser au lieu de le deviner.
+    if (replaySource === 'attempt') {
+      return {
+        fen: attempt?.fen || current.fen,
+        moves: attempt?.move ? [attempt.move] : [],
+        step: 1,
+      };
+    }
     // La réfutation part de ma position : on rejoue d'abord mon coup.
-    return [{ san: current.move_played, uci: '' }, ...current.punishment_pv];
-  }, [current, replaySource]);
+    return {
+      fen: current.fen,
+      moves: [
+        { san: current.move_played, uci: '' },
+        ...current.punishment_pv,
+      ] as LineMove[],
+      step: 1,
+    };
+  }, [attempt, current, replaySource]);
 
-  const replay = useLineReplay(
-    current?.fen ?? START_FEN,
-    replayMoves,
-    phase === 'wrong',
-    autoPlayLine
-  );
+  const replay = useLineReplay({
+    fen: replayLine.fen,
+    moves: replayLine.moves,
+    active: phase === 'wrong',
+    autoPlay: autoPlayLine,
+    initialStep: replayLine.step,
+  });
 
   const handleMove = useCallback(
     (move: BoardMove) => {
@@ -137,12 +163,18 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
         correct,
         gradeLabel: GRADE_LABELS[outcome.grade],
         playedSan: move.san,
+        move: {
+          san: move.san,
+          uci: move.from + move.to + (move.promotion ?? ''),
+        },
+        fen: run.fen,
       });
-      // Un échec en cours de ligne n'a rien à voir avec la réfutation du coup
-      // de partie : c'est la solution qu'il faut revoir.
-      setReplaySource(
-        !correct && run.moveNumber > 1 ? 'solution' : 'punishment'
-      );
+      // Un coup raté ouvre sa propre variante — sauf s'il est celui de la
+      // partie : la réfutation enregistrée le prolonge, et vaut mieux qu'un
+      // coup isolé.
+      const isGameMove =
+        run.moveNumber === 1 && move.san === current.move_played;
+      setReplaySource(!correct && !isGameMove ? 'attempt' : 'punishment');
       setElapsed(Math.floor(seconds));
       setPhase(correct ? 'correct' : 'wrong');
 
@@ -204,7 +236,7 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
           lastMove:
             replay.frame.lastMove ?? (replay.step === 0 ? previousSquares : null),
         }
-      : { fen: run.fen, lastMove: run.lastMove ?? previousSquares };
+      : { fen: run.fen, lastMove: run.lastMove };
 
   return (
     <Screen scroll>
@@ -226,9 +258,11 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
           fen={board.fen}
           orientation={solverColor}
           size={boardSize}
-          interactive={phase === 'solving' && !run.waiting}
+          // Après l'échec, l'échiquier n'est plus une question mais un
+          // brouillon : on y joue ce qu'on veut, des deux camps.
+          interactive={phase === 'wrong' || (phase === 'solving' && !run.waiting)}
           lastMove={board.lastMove}
-          onMove={handleMove}
+          onMove={phase === 'wrong' ? replay.explore : handleMove}
         />
       </View>
 
@@ -394,30 +428,43 @@ function Outcome({
               {t('review.expected', { move: expected })}
             </AppText>
           ) : null}
+          <LineFilter
+            selected={replaySource}
+            onSelect={onReplaySource}
+            hasAttempt={Boolean(attempt?.move)}
+            hasSolution={hasSolution}
+            hasPunishment={hasPunishment}
+          />
           <AppText muted variant="label" style={styles.outcomeLine}>
-            {replaySource === 'solution'
-              ? t('review.solutionTitle')
-              : hasPunishment
-                ? t('review.punishmentTitle')
-                : t('review.punishmentEmpty')}
+            {t('review.exploreHint')}
           </AppText>
           <ReplayControls replay={replay} />
-          {replay.total > 0 ? (
-            <Button
-              // La variante ne se déroule pas d'elle-même : on regarde la
-              // position ratée aussi longtemps qu'on veut avant de la voir.
-              label={
-                replay.playing
-                  ? t('review.pauseLine')
-                  : replay.atEnd
-                    ? t('review.replay')
-                    : t('review.playLine')
-              }
-              variant="secondary"
-              onPress={replay.playing ? replay.pause : replay.play}
-              style={styles.playLine}
-            />
-          ) : null}
+          <View style={styles.lineActions}>
+            {replay.total > 0 ? (
+              <Button
+                // La variante ne se déroule pas d'elle-même : on regarde la
+                // position ratée aussi longtemps qu'on veut avant de la voir.
+                label={
+                  replay.playing
+                    ? t('review.pauseLine')
+                    : replay.atEnd
+                      ? t('review.replay')
+                      : t('review.playLine')
+                }
+                variant="secondary"
+                onPress={replay.playing ? replay.pause : replay.play}
+                style={styles.action}
+              />
+            ) : null}
+            {replay.branched ? (
+              <Button
+                label={t('review.resetLine')}
+                variant="secondary"
+                onPress={replay.reset}
+                style={styles.action}
+              />
+            ) : null}
+          </View>
           <Toggle
             label={t('review.autoPlayLine')}
             value={autoPlayLine}
@@ -433,25 +480,50 @@ function Outcome({
       </View>
 
       <View style={styles.actions}>
-        {!correct && hasSolution && replaySource === 'punishment' ? (
-          <Button
-            label={t('review.showSolution')}
-            variant="secondary"
-            onPress={() => onReplaySource('solution')}
-            style={styles.action}
-          />
-        ) : null}
-        {!correct && hasPunishment && replaySource === 'solution' ? (
-          <Button
-            label={t('review.showPunishment')}
-            variant="secondary"
-            onPress={() => onReplaySource('punishment')}
-            style={styles.action}
-          />
-        ) : null}
         <Button label={t('review.next')} onPress={onNext} style={styles.action} />
       </View>
     </Panel>
+  );
+}
+
+/** Quelle variante l'échiquier montre : mon coup, la solution, la réfutation. */
+function LineFilter({
+  selected,
+  onSelect,
+  hasAttempt,
+  hasSolution,
+  hasPunishment,
+}: {
+  selected: ReplaySource;
+  onSelect: (source: ReplaySource) => void;
+  hasAttempt: boolean;
+  hasSolution: boolean;
+  hasPunishment: boolean;
+}) {
+  return (
+    <View style={styles.lines}>
+      {hasAttempt ? (
+        <Chip
+          label={t('review.lineAttempt')}
+          selected={selected === 'attempt'}
+          onPress={() => onSelect('attempt')}
+        />
+      ) : null}
+      {hasSolution ? (
+        <Chip
+          label={t('review.solutionTitle')}
+          selected={selected === 'solution'}
+          onPress={() => onSelect('solution')}
+        />
+      ) : null}
+      {hasPunishment ? (
+        <Chip
+          label={t('review.punishmentTitle')}
+          selected={selected === 'punishment'}
+          onPress={() => onSelect('punishment')}
+        />
+      ) : null}
+    </View>
   );
 }
 
@@ -529,9 +601,17 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
     rowGap: Spacing.xs,
   },
-  playLine: {
+  lines: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: Spacing.sm,
+    rowGap: Spacing.xs,
+  },
+  lineActions: {
+    flexDirection: 'row',
     marginTop: Spacing.sm,
     marginBottom: Spacing.sm,
+    columnGap: Spacing.sm,
   },
   replayControls: {
     flexDirection: 'row',

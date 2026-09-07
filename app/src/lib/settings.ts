@@ -12,6 +12,9 @@ const PREFIX = 'atelier.settings.';
 /** Rejoue automatiquement l'enchaînement attendu après une erreur. */
 export const AUTO_PLAY_LINE = 'autoPlayLine';
 
+/** Bat le lot de révision au lieu de suivre l'ordre des parties. */
+export const SHUFFLE_QUEUE = 'shuffleQueue';
+
 /**
  * Booléen persistant.
  *

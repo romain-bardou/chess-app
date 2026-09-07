@@ -16,6 +16,10 @@ export async function fetchDueMistakes(theme?: string | null): Promise<Mistake[]
     .select('*')
     .lte('fsrs_due_at', new Date().toISOString())
     .order('fsrs_due_at', { ascending: true })
+    // Les cartes d'une partie sont insérées d'un bloc, donc à la même
+    // échéance : sans second critère, leur ordre serait celui du hasard.
+    .order('game_id', { ascending: true })
+    .order('ply_number', { ascending: true })
     .limit(QUEUE_SIZE);
 
   if (theme) query = query.contains('themes', [theme]);

@@ -182,6 +182,22 @@ suivent la ligne, seul endroit où la suite est connue.
 
 `SOLUTION_PLIES` (12 par défaut) borne la longueur examinée.
 
+## Ordre de la file
+
+Les cartes dues remontent par échéance croissante, les plus en retard d'abord.
+Une carte neuve est due dès sa création, donc les cartes neuves sortent dans
+l'ordre d'analyse : partie par partie, coup par coup. Les cartes d'une même
+partie étant insérées d'un bloc partagent la même échéance à la milliseconde,
+d'où le tri secondaire sur `(game_id, ply_number)` — sans lui, leur ordre
+serait celui du hasard, ni groupé ni chronologique.
+
+Revoir une partie d'affilée aide à comprendre, mais la position précédente
+souffle la réponse. Les deux puces sous le filtre par thème choisissent :
+« Par partie » (défaut) ou « Aléatoire », conservé d'une session à l'autre.
+Le mélange ne touche qu'aux cartes pas encore vues du lot en cours
+(`app/src/features/review/queueOrder.ts`) : basculer en pleine carte ne la fait
+pas disparaître. Il se limite au lot chargé, 60 cartes.
+
 ## L'échiquier
 
 Une pièce voyage de sa case de départ à sa case d'arrivée

@@ -41,6 +41,8 @@
   "review.stepForward": "Coup suivant",
   "review.gainMate": "Cette ligne finit par un mat.",
   "review.gainMaterial": "Cette ligne gagne {value} point(s) de matériel.",
+  "review.orderByGame": "Par partie",
+  "review.orderRandom": "Aléatoire",
   "review.next": "Carte suivante",
   "review.emptyTitle": "Rien à réviser",
   "review.emptyBody": "Aucune carte n'est due pour l'instant. Reviens plus tard, ou importe de nouvelles parties.",

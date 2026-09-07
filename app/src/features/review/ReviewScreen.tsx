@@ -20,7 +20,7 @@ import { usePuzzleRun } from '@/features/review/usePuzzleRun';
 import { useReviewQueue } from '@/features/review/useReviewQueue';
 import { GRADE_LABELS, reviewMistake } from '@/lib/fsrs';
 import { t, translateTheme, type TranslationKey } from '@/lib/i18n';
-import { AUTO_PLAY_LINE, useStoredFlag } from '@/lib/settings';
+import { AUTO_PLAY_LINE, SHUFFLE_QUEUE, useStoredFlag } from '@/lib/settings';
 import type { LineMove, Mistake, SolutionGain } from '@/lib/types';
 import { Colors, Spacing } from '@/theme/atelier';
 
@@ -54,7 +54,10 @@ function gainLabel(gain: SolutionGain | null): string | null {
 export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | null }) {
   const [theme, setTheme] = useState<string | null>(initialTheme);
   const [availableThemes, setAvailableThemes] = useState<string[]>([]);
-  const queue = useReviewQueue(theme);
+  // Les cartes neuves arrivent groupées par partie, dans l'ordre des coups :
+  // pratique pour revoir une partie, trop indicatif pour tester la mémoire.
+  const [shuffle, setShuffle] = useStoredFlag(SHUFFLE_QUEUE, false);
+  const queue = useReviewQueue(theme, shuffle);
   const current = queue.current;
 
   const [phase, setPhase] = useState<Phase>('solving');
@@ -212,6 +215,8 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
 
       <ThemeFilter themes={availableThemes} selected={theme} onSelect={setTheme} />
 
+      <OrderFilter shuffle={shuffle} onSelect={setShuffle} />
+
       <AppText muted style={styles.remaining}>
         {t('review.remaining', { count: queue.remaining })}
       </AppText>
@@ -298,6 +303,30 @@ function ThemeFilter({
         />
       ))}
     </ScrollView>
+  );
+}
+
+/** Ordre de la file : les cartes d'une partie à la suite, ou battues. */
+function OrderFilter({
+  shuffle,
+  onSelect,
+}: {
+  shuffle: boolean;
+  onSelect: (shuffle: boolean) => void;
+}) {
+  return (
+    <View style={styles.order}>
+      <Chip
+        label={t('review.orderByGame')}
+        selected={!shuffle}
+        onPress={() => onSelect(false)}
+      />
+      <Chip
+        label={t('review.orderRandom')}
+        selected={shuffle}
+        onPress={() => onSelect(true)}
+      />
+    </View>
   );
 }
 
@@ -465,6 +494,10 @@ const styles = StyleSheet.create({
   },
   filterContent: {
     paddingVertical: Spacing.xs,
+  },
+  order: {
+    flexDirection: 'row',
+    marginTop: Spacing.sm,
   },
   remaining: {
     marginTop: Spacing.xs,

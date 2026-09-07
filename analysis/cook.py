@@ -64,7 +64,8 @@ def _material(board: chess.Board, color: chess.Color) -> int:
     )
 
 
-def _balance(board: chess.Board, color: chess.Color) -> int:
+def material_balance(board: chess.Board, color: chess.Color) -> int:
+    """Différence de matériel, en pions, du point de vue de `color`."""
     return _material(board, color) - _material(board, not color)
 
 
@@ -335,12 +336,12 @@ def cook(
         return []
     final = walker
 
-    start_balance = _balance(board, solver)
+    start_balance = material_balance(board, solver)
     worst_balance = start_balance
 
     for index, (before, move, after) in enumerate(steps):
         if index % 2 == 1:  # coup adverse
-            worst_balance = min(worst_balance, _balance(after, solver))
+            worst_balance = min(worst_balance, material_balance(after, solver))
             continue
 
         if _fork(after, move, solver):
@@ -383,7 +384,7 @@ def cook(
             if _attraction(before, move, solver, steps):
                 themes.add("attraction")
 
-        worst_balance = min(worst_balance, _balance(after, solver))
+        worst_balance = min(worst_balance, material_balance(after, solver))
 
     themes.update(_mate_themes(final, solver, evaluation))
 

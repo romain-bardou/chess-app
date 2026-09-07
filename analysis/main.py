@@ -22,6 +22,7 @@ from config import Config
 from cook import cook
 from db import Supabase
 from engine import Candidate, Engine
+from solution import build_solution
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
@@ -71,6 +72,13 @@ def accepted_moves_json(
     return accepted
 
 
+def move_json(board: chess.Board, move: chess.Move) -> Optional[Dict[str, str]]:
+    """Sérialise un coup depuis la position qui le précède, ou `None`."""
+    if move not in board.legal_moves:
+        return None
+    return {"san": board.san(move), "uci": move.uci()}
+
+
 def find_candidate(
     candidates: Sequence[Candidate], move: chess.Move
 ) -> Optional[Candidate]:
@@ -95,15 +103,21 @@ def analyse_game(
     my_color = chess.WHITE if game_row["color_played"] == "white" else chess.BLACK
     board = parsed.board()
     rows: List[Dict[str, Any]] = []
+    # Dernier coup adverse : affiché sur la carte pour situer la position.
+    previous: Optional[Dict[str, str]] = None
 
     for played in parsed.mainline_moves():
         if board.turn != my_color or board.ply() < config.skip_first_plies:
+            previous = move_json(board, played)
             board.push(played)
             continue
 
-        card = evaluate_position(engine, database, config, board, played, game_row)
+        card = evaluate_position(
+            engine, database, config, board, played, game_row, previous
+        )
         if card is not None:
             rows.append(card)
+        previous = move_json(board, played)
         board.push(played)
 
     return rows
@@ -116,6 +130,7 @@ def evaluate_position(
     board: chess.Board,
     played: chess.Move,
     game_row: Dict[str, Any],
+    previous: Optional[Dict[str, str]] = None,
 ) -> Optional[Dict[str, Any]]:
     candidates = engine.analyse(board, multipv=config.multipv)
     if not candidates:
@@ -134,6 +149,12 @@ def evaluate_position(
     delta = classify.delta(best.winning_chances, played_candidate.winning_chances)
     category = classify.categorize(delta)
     if category is None:
+        return None
+
+    # Un puzzle doit se terminer sur un gain vérifiable (matériel ou mat), pas
+    # sur un simple « meilleur coup » : sans ça, la carte est inrévisable.
+    solution = build_solution(board, best.pv, config.solution_plies)
+    if solution is None:
         return None
 
     fen = board.fen()
@@ -158,10 +179,13 @@ def evaluate_position(
         "fen": fen,
         "ply_number": board.ply(),
         "move_played": played_san,
+        "previous_move": previous,
         "accepted_moves": accepted_moves_json(board, candidates, best.winning_chances),
+        "solution": line_to_json(board, solution.moves),
+        "solution_gain": solution.gain,
         "punishment_pv": punishment,
         "category": category,
-        "themes": cook(board, best.pv, best.evaluation),
+        "themes": cook(board, solution.moves, best.evaluation),
         "card_type": "mistake",
     }
 

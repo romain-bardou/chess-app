@@ -15,6 +15,7 @@ import classify
 from classify import Evaluation
 from config import _api_url
 from cook import _back_rank_mate, _fork, _line_relations, _smothered_mate, cook
+from solution import build_solution
 
 
 def _kinds(board: chess.Board, color: chess.Color) -> set:
@@ -168,6 +169,58 @@ def test_cook_survives_an_illegal_tail() -> None:
     board = chess.Board()
     solution = [chess.Move.from_uci("e2e4"), chess.Move.from_uci("a1a8")]
     assert cook(board, solution, Evaluation(cp=30, mate=None))
+
+
+# ----------------------------------------------------------------------
+# Solution du puzzle
+# ----------------------------------------------------------------------
+
+
+def _uci(board: chess.Board, sans: list) -> list:
+    walker = board.copy()
+    moves = []
+    for san in sans:
+        move = walker.parse_san(san)
+        moves.append(move)
+        walker.push(move)
+    return moves
+
+
+def test_solution_stops_on_the_move_that_wins_the_piece() -> None:
+    # La dame noire est en prise : Rxd5 la gagne, la ligne s'arrête là.
+    board = chess.Board("4k3/8/8/3q4/8/8/8/3RK3 w - - 0 1")
+    found = build_solution(board, _uci(board, ["Rxd5", "Ke7", "Rd1"]))
+    assert found is not None
+    assert [board.san(move) for move in found.moves[:1]] == ["Rxd5"]
+    assert len(found.moves) == 1
+    assert found.gain == {"type": "material", "value": 9}
+
+
+def test_solution_keeps_the_recapture_before_counting() -> None:
+    # Le matériel se compte après la réponse adverse, pas juste après la prise.
+    board = chess.Board("4k3/8/8/3q4/8/8/8/3RK3 w - - 0 1")
+    assert build_solution(board, _uci(board, ["Rxd5", "Kf7"])) is not None
+    # Ici la tour est reprise : l'échange est nul, il n'y a pas de puzzle.
+    even = chess.Board("8/8/3k4/3r4/8/8/8/3RK3 w - - 0 1")
+    assert build_solution(even, _uci(even, ["Rxd5+", "Kxd5"])) is None
+
+
+def test_solution_reports_a_mate() -> None:
+    board = chess.Board("6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1")
+    found = build_solution(board, _uci(board, ["Ra8"]))
+    assert found is not None
+    assert found.gain == {"type": "mate"}
+    assert len(found.moves) == 1
+
+
+def test_solution_refuses_a_line_without_material_gain() -> None:
+    board = chess.Board("4k3/8/8/8/8/8/8/3RK3 w - - 0 1")
+    assert build_solution(board, _uci(board, ["Rd4", "Ke7", "Rd5"])) is None
+
+
+def test_solution_stops_at_the_ply_budget() -> None:
+    board = chess.Board("4k3/8/8/3q4/8/8/8/3RK3 w - - 0 1")
+    assert build_solution(board, _uci(board, ["Rd4", "Ke7"]), max_plies=0) is None
 
 
 # ----------------------------------------------------------------------

@@ -69,6 +69,9 @@ class Config:
 
     # Nombre de demi-coups conservés dans punishment_pv.
     punishment_plies: int
+    # Longueur maximale de la solution d'un puzzle, en demi-coups. La ligne est
+    # de toute façon coupée dès que le gain est encaissé.
+    solution_plies: int
     # Garde-fou : au-delà, le run s'arrête et reprendra le lendemain.
     max_games_per_run: int
     # On ignore l'ouverture : les écarts y sont dus au répertoire, pas au calcul.
@@ -94,6 +97,7 @@ class Config:
             threads=_int("ENGINE_THREADS", 2),
             hash_mb=_int("ENGINE_HASH_MB", 128),
             punishment_plies=_int("PUNISHMENT_PLIES", 8),
+            solution_plies=_int("SOLUTION_PLIES", 12),
             max_games_per_run=_int("MAX_GAMES_PER_RUN", 40),
             skip_first_plies=_int("SKIP_FIRST_PLIES", 8),
         )

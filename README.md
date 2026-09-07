@@ -38,6 +38,7 @@ Exécuter dans le SQL Editor, dans l'ordre :
 1. `supabase/migrations/001_init.sql`
 2. `supabase/migrations/002_stats.sql`
 3. `supabase/migrations/004_fsrs_card.sql`
+4. `supabase/migrations/005_puzzle_solution.sql`
 
 Puis créer le compte (Authentication → Users → Add user, email + mot de passe),
 copier son UUID, et renseigner le propriétaire :
@@ -161,6 +162,74 @@ Lichess) : un couple (position, coup) présent dans `repertoire_nodes` n'est
 jamais sanctionné. La table est vide tant que la phase 2 n'existe pas, donc
 l'exception est sans effet pour l'instant, mais le code est en place.
 
+## Ce qui devient un puzzle
+
+Un coup sanctionné ne suffit pas : la carte n'est créée que si la variante
+correcte aboutit à un gain vérifiable sur l'échiquier — du matériel ou un mat
+(`analysis/solution.py`). Un « meilleur coup » qui améliore la position d'un
+demi-pion ne se contrôle pas : le joueur ne saurait pas dire s'il a réussi.
+
+La solution stockée est la variante du moteur, coupée au premier point de repos
+où le gain est acquis et conservé jusqu'au bout de la ligne analysée. Le
+matériel se compte après la réponse adverse, jamais juste après une prise :
+sinon la reprise transformerait un échange nul en gain fantôme. La ligne
+retenue, elle, se termine toujours sur un coup du joueur.
+
+En révision, la carte se joue donc en plusieurs temps : le joueur trouve son
+coup, l'adversaire répond tout seul, jusqu'au gain. Le premier coup accepte
+n'importe quelle continuation non sanctionnée (`accepted_moves`) ; les suivants
+suivent la ligne, seul endroit où la suite est connue.
+
+`SOLUTION_PLIES` (12 par défaut) borne la longueur examinée.
+
+## L'échiquier
+
+Une pièce voyage de sa case de départ à sa case d'arrivée
+(`MOVE_DURATION_MS`, 190 ms) au lieu de disparaître d'un côté pour réapparaître
+de l'autre. L'échiquier est contrôlé : il reçoit une FEN sans savoir quel coup
+l'a produite, donc `app/src/chess/transitions.ts` retrouve le trajet en
+comparant les deux plateaux. Le roque en produit deux, la promotion et la prise
+en passant un seul. Une transition qui n'est pas un coup (nouvelle carte, saut
+dans une variante) bascule sans animation plutôt que d'inventer un déplacement.
+
+Chaque coup posé déclenche un bruit de pièce via `expo-audio`. L'audio est un
+agrément : une panne de lecture est avalée sans jamais empêcher de jouer.
+
+L'échantillon (`app/assets/sounds/move.wav`, 11 ko, 127 ms) est synthétisé, pas
+emprunté — même raison que les pièces dessinées à la main : aucune licence à
+traîner pour une publication App Store. Sa source est
+`app/assets/sounds/move.gen.js`, à relancer avec `node` après toute retouche.
+C'est la seule façon de modifier le son.
+
+Ses réglages ne sont pas devinés : ils viennent de l'analyse d'un son de
+référence, puis d'un calage en boucle — on rend, on ré-analyse le rendu avec la
+même méthode, on corrige. Comparer deux mesures faites pareil annule les biais
+de la méthode. Chaque élément du modèle répond à un défaut d'abord mesuré, et
+l'en-tête du générateur détaille lequel. Les trois enseignements qui coûtent le
+plus cher à redécouvrir :
+
+- **Une synthèse purement modale sonne métallique**, quels que soient les
+  modes. Douze sinusoïdes laissent le spectre vide entre leurs pics et
+  l'oreille entend un accord. Mesurée en platitude spectrale : 0,001 contre
+  0,139 pour la référence. Il faut un lit de bruit qui remplit les creux.
+- **Netteté et brillance sont deux grandeurs distinctes.** Les avoir confondues
+  a coûté plusieurs essais : ajouter un transitoire large bande rend nerveux
+  *et* sifflant. Concentrer l'énergie tôt avec le spectre du son, lui, ne rend
+  que nerveux.
+- **Un passe-bas à un pôle ne coupe qu'à 6 dB/octave.** Trop mou pour retirer
+  un excès d'aigu sans emporter le médium qui porte la netteté. Le générateur
+  empile trois pôles.
+
+Attention si tu retouches vers le grave : un haut-parleur de téléphone coupe
+sous ~600 Hz. Le corps résonant de cet échantillon se tient volontairement
+au-dessus de 170 Hz pour rester audible sur l'appareil visé.
+
+Après une erreur, la variante ne se déroule plus toute seule : la position
+ratée reste à l'écran, et un bouton « Dérouler la variante » lance la lecture
+(les flèches l'interrompent). L'interrupteur « Dérouler la variante
+automatiquement », rangé sous la variante et conservé d'une session à l'autre
+(`app/src/lib/settings.ts`), rétablit l'ancien comportement.
+
 Les motifs tactiques (`analysis/cook.py`) sont adaptés de
 `lichess-org/lichess-puzzler`, avec les mêmes clés que Lichess (`fork`, `pin`,
 `backRankMate`…) ; la traduction en français vit dans `app/src/locales/fr.json`.
@@ -170,7 +239,8 @@ Les motifs tactiques (`analysis/cook.py`) sont adaptés de
 Aucune auto-évaluation : la note se déduit du résultat et du temps.
 
 ```
-temps_attendu = 10 s + 5 s × (nombre de demi-coups de punishment_pv)
+temps_attendu = 10 s + 5 s × (demi-coups de la plus longue des deux variantes,
+                              solution ou punishment_pv)
 raté                             → Again
 réussi, < 60 % du temps attendu  → Easy
 réussi, 60–120 %                 → Good
@@ -194,6 +264,7 @@ entre Easy, Good et Hard.
 | Contrainte `unique (game_id, ply_number)` sur `mistakes` | Une partie réanalysée ne doit pas dupliquer ses cartes ni écraser un état FSRS existant. |
 | Pièces d'échecs dessinées sur mesure | Les jeux libres courants (Cburnett) sont sous licence à attribution ; contrainte inutile pour une publication App Store. |
 | Les 8 premiers demi-coups ne sont pas analysés (`SKIP_FIRST_PLIES`) | Les écarts en ouverture relèvent du répertoire, pas du calcul. Réglable par variable d'environnement. |
+| Colonnes `previous_move`, `solution`, `solution_gain` (migration 005) | Le dernier coup adverse situe la position, et un puzzle doit se terminer sur un gain concret plutôt que sur un seul coup « attendu ». |
 
 ## Hors périmètre V1
 

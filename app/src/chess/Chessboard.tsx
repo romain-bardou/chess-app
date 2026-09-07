@@ -19,9 +19,12 @@ import {
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import Svg, {
   Circle,
@@ -40,10 +43,15 @@ import {
   pointToSquare,
   squareToPoint,
 } from '@/chess/squares';
+import { pieceTravels, type PieceTravel } from '@/chess/transitions';
+import { playMoveSound } from '@/lib/sound';
 import { Board, Colors, Radius } from '@/theme/atelier';
 
 /** Déplacement au-delà duquel le geste est un glisser et non un appui. */
 const TAP_SLOP = 8;
+
+/** Durée du trajet d'une pièce d'une case à l'autre, en millisecondes. */
+export const MOVE_DURATION_MS = 190;
 
 const PROMOTION_CHOICES: PieceSymbol[] = ['q', 'r', 'b', 'n'];
 
@@ -114,6 +122,40 @@ export function Chessboard({
     setPromotion(null);
   }, [fen]);
 
+  // Trajet des pièces entre l'ancienne et la nouvelle position. L'échiquier
+  // affiche déjà la position d'arrivée : les pièces en vol sont masquées sur
+  // leur case de destination et redessinées dans la couche animée.
+  const [travels, setTravels] = useState<PieceTravel[]>([]);
+  const travelProgress = useSharedValue(1);
+  const renderedFen = useRef(fen);
+
+  useEffect(() => {
+    const before = renderedFen.current;
+    renderedFen.current = fen;
+    if (before === fen) return;
+
+    // Liste vide : ce n'est pas un coup (nouvelle carte, retour en arrière).
+    // On bascule sans transition plutôt que d'inventer un déplacement.
+    const moved = pieceTravels(before, fen);
+    setTravels(moved);
+    if (moved.length === 0) return;
+
+    playMoveSound();
+    travelProgress.value = 0;
+    travelProgress.value = withTiming(
+      1,
+      { duration: MOVE_DURATION_MS, easing: Easing.out(Easing.quad) },
+      (finished) => {
+        if (finished) runOnJS(setTravels)([]);
+      }
+    );
+  }, [fen, travelProgress]);
+
+  const flying = useMemo(
+    () => new Set(travels.map((travel) => travel.to)),
+    [travels]
+  );
+
   const setActiveSquare = useCallback((square: Square | null) => {
     selectedRef.current = square;
     setSelected(square);
@@ -165,17 +207,27 @@ export function Chessboard({
     [game, orientation, squareSize, setDragSquare]
   );
 
-  const handleTouchEnd = useCallback(
-    (x: number, y: number, moved: boolean) => {
+  /** Fin d'un glisser : la pièce est lâchée sur la case sous le doigt. */
+  const handleDrop = useCallback(
+    (x: number, y: number) => {
       const square = pointToSquare(x, y, orientation, squareSize);
       const from = dragFromRef.current;
       setDragSquare(null);
-      if (!square) return;
+      if (square && from && from !== square) submit(from, square);
+    },
+    [orientation, squareSize, setDragSquare, submit]
+  );
 
-      if (moved) {
-        if (from && from !== square) submit(from, square);
-        return;
-      }
+  /**
+   * Appui simple : on sélectionne sa pièce, puis on désigne la destination.
+   * Le deuxième appui joue le coup si la case est une destination légale,
+   * sinon il change la sélection.
+   */
+  const handleTap = useCallback(
+    (x: number, y: number) => {
+      const square = pointToSquare(x, y, orientation, squareSize);
+      setDragSquare(null);
+      if (!square) return;
 
       const previous = selectedRef.current;
       if (previous && previous !== square && submit(previous, square)) return;
@@ -190,17 +242,30 @@ export function Chessboard({
 
   // Trampolines stables : `runOnJS` doit recevoir une référence constante,
   // alors que les handlers changent à chaque rendu.
-  const handlers = useRef({ start: handleTouchStart, end: handleTouchEnd });
-  handlers.current = { start: handleTouchStart, end: handleTouchEnd };
+  const handlers = useRef({
+    start: handleTouchStart,
+    drop: handleDrop,
+    tap: handleTap,
+  });
+  handlers.current = {
+    start: handleTouchStart,
+    drop: handleDrop,
+    tap: handleTap,
+  };
 
   const touchStart = useCallback(
     (x: number, y: number) => handlers.current.start(x, y),
     []
   );
-  const touchEnd = useCallback(
-    (x: number, y: number, moved: boolean) => handlers.current.end(x, y, moved),
+  const touchDrop = useCallback(
+    (x: number, y: number) => handlers.current.drop(x, y),
     []
   );
+  const touchTap = useCallback(
+    (x: number, y: number) => handlers.current.tap(x, y),
+    []
+  );
+  const cancelDrag = useCallback(() => setDragSquare(null), [setDragSquare]);
 
   const dragX = useSharedValue(0);
   const dragY = useSharedValue(0);
@@ -208,7 +273,10 @@ export function Chessboard({
   const startY = useSharedValue(0);
   const dragging = useSharedValue(0);
 
-  const gesture = useMemo(
+  // Le glisser passe par un Pan, l'appui par un Tap : un Pan qui ne s'active
+  // jamais (doigt posé puis relevé sans bouger) n'appelle pas `onEnd`, donc
+  // lui confier aussi l'appui laisserait le clic-clic sans effet.
+  const pan = useMemo(
     () =>
       Gesture.Pan()
         .enabled(interactive)
@@ -234,13 +302,44 @@ export function Chessboard({
             event.x - startX.value,
             event.y - startY.value
           );
-          runOnJS(touchEnd)(event.x, event.y, distance > TAP_SLOP);
+          if (distance > TAP_SLOP) runOnJS(touchDrop)(event.x, event.y);
+          else runOnJS(touchTap)(event.x, event.y);
         })
         .onFinalize(() => {
           dragging.value = 0;
+          runOnJS(cancelDrag)();
         }),
-    [interactive, touchStart, touchEnd, dragX, dragY, startX, startY, dragging]
+    [
+      interactive,
+      touchStart,
+      touchDrop,
+      touchTap,
+      cancelDrag,
+      dragX,
+      dragY,
+      startX,
+      startY,
+      dragging,
+    ]
   );
+
+  const tap = useMemo(
+    () =>
+      Gesture.Tap()
+        .enabled(interactive)
+        .maxDistance(TAP_SLOP)
+        // Un appui réfléchi peut durer : la durée par défaut (500 ms) le
+        // ferait échouer sans que rien ne se passe à l'écran.
+        .maxDuration(4000)
+        .onEnd((event) => {
+          runOnJS(touchTap)(event.x, event.y);
+        }),
+    [interactive, touchTap]
+  );
+
+  // Le Pan est prioritaire : s'il s'active, c'est un glisser et le Tap est
+  // annulé. Sinon le Tap reprend la main.
+  const gesture = useMemo(() => Gesture.Exclusive(pan, tap), [pan, tap]);
 
   const active = dragFrom ?? selected;
 
@@ -353,7 +452,7 @@ export function Chessboard({
               .board()
               .flat()
               .map((cell) => {
-                if (!cell) return null;
+                if (!cell || flying.has(cell.square)) return null;
                 const { x, y } = squareToPoint(
                   cell.square,
                   orientation,
@@ -376,6 +475,16 @@ export function Chessboard({
           </Svg>
         </View>
       </GestureDetector>
+
+      {travels.map((travel) => (
+        <TravelingPiece
+          key={`${travel.from}-${travel.to}`}
+          travel={travel}
+          orientation={orientation}
+          squareSize={squareSize}
+          progress={travelProgress}
+        />
+      ))}
 
       {draggedPiece ? (
         <Animated.View pointerEvents="none" style={[styles.dragLayer, dragStyle]}>
@@ -401,6 +510,48 @@ export function Chessboard({
         />
       ) : null}
     </View>
+  );
+}
+
+/**
+ * Pièce en cours de déplacement, dessinée au-dessus de l'échiquier.
+ *
+ * Les deux extrémités sont fixes : seule la progression est animée, ce qui
+ * garde tout le trajet sur le thread d'animation.
+ */
+function TravelingPiece({
+  travel,
+  orientation,
+  squareSize,
+  progress,
+}: {
+  travel: PieceTravel;
+  orientation: Color;
+  squareSize: number;
+  progress: SharedValue<number>;
+}) {
+  const from = squareToPoint(travel.from, orientation, squareSize);
+  const to = squareToPoint(travel.to, orientation, squareSize);
+
+  const style = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: from.x + (to.x - from.x) * progress.value },
+      { translateY: from.y + (to.y - from.y) * progress.value },
+    ],
+  }));
+
+  return (
+    <Animated.View pointerEvents="none" style={[styles.dragLayer, style]}>
+      <Svg width={squareSize} height={squareSize}>
+        <Piece
+          type={travel.type}
+          color={travel.color}
+          size={squareSize}
+          x={0}
+          y={0}
+        />
+      </Svg>
+    </Animated.View>
   );
 }
 

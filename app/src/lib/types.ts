@@ -12,6 +12,15 @@ export interface LineMove {
  * Un coup non sanctionné. Le script en stocke plusieurs : toute continuation
  * qui reste au-dessus du seuil d'imprécision compte comme réussie.
  */
+/**
+ * Le dernier coup adverse, avec la position d'où il part quand elle est
+ * connue : les cartes d'avant cette version n'ont que le coup, et se posent
+ * alors directement sur la position à résoudre.
+ */
+export interface PreviousMove extends LineMove {
+  fen?: string;
+}
+
 export interface AcceptedMove extends LineMove {
   cp: number | null;
   mate: number | null;
@@ -48,7 +57,7 @@ export interface Mistake {
   ply_number: number;
   move_played: string;
   /** Coup adverse qui a amené la position. Null sur les cartes d'avant la 005. */
-  previous_move: LineMove | null;
+  previous_move: PreviousMove | null;
   accepted_moves: AcceptedMove[];
   /**
    * Variante à jouer, en alternance (solveur, adversaire, solveur, …), coupée

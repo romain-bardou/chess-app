@@ -12,6 +12,7 @@ import chess
 
 import chesscom
 import classify
+import main
 from classify import Evaluation
 from config import _api_url
 from cook import _back_rank_mate, _fork, _line_relations, _smothered_mate, cook
@@ -221,6 +222,15 @@ def test_solution_refuses_a_line_without_material_gain() -> None:
 def test_solution_stops_at_the_ply_budget() -> None:
     board = chess.Board("4k3/8/8/3q4/8/8/8/3RK3 w - - 0 1")
     assert build_solution(board, _uci(board, ["Rd4", "Ke7"]), max_plies=0) is None
+
+
+def test_previous_move_carries_the_position_before_it() -> None:
+    board = chess.Board()
+    before = board.fen()
+    played = main.move_json(board, board.parse_san("e4"))
+    assert played == {"san": "e4", "uci": "e2e4", "fen": before}
+    # L'app rejoue ce coup depuis cette FEN : il doit y être légal.
+    assert main.move_json(board, chess.Move.from_uci("e2e5")) is None
 
 
 # ----------------------------------------------------------------------

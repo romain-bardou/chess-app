@@ -73,10 +73,16 @@ def accepted_moves_json(
 
 
 def move_json(board: chess.Board, move: chess.Move) -> Optional[Dict[str, str]]:
-    """Sérialise un coup depuis la position qui le précède, ou `None`."""
+    """Sérialise un coup depuis la position qui le précède, ou `None`.
+
+    La FEN embarquée est celle d'avant le coup : l'app y pose la carte, joue le
+    coup adverse sous les yeux du joueur, et la position à résoudre arrive par
+    un déplacement plutôt que par un plateau surgi de nulle part. Un coup ne se
+    défait pas côté app — la pièce prise est introuvable — d'où le stockage.
+    """
     if move not in board.legal_moves:
         return None
-    return {"san": board.san(move), "uci": move.uci()}
+    return {"san": board.san(move), "uci": move.uci(), "fen": board.fen()}
 
 
 def find_candidate(

@@ -51,47 +51,85 @@ export interface LineReplay {
   frame: Frame;
   step: number;
   total: number;
+  atStart: boolean;
   atEnd: boolean;
-  restart: () => void;
+  /** Vrai pendant le défilement automatique. */
+  playing: boolean;
+  /** Lance le défilement ; repart du début s'il est déjà au bout. */
+  play: () => void;
+  pause: () => void;
   next: () => void;
+  previous: () => void;
 }
 
-/** Relit une variante coup par coup, en avance automatique. */
+/**
+ * Relit une variante coup par coup.
+ *
+ * La position de départ reste à l'écran tant que le joueur ne demande rien :
+ * dérouler la suite tout seul lui retire l'occasion de chercher où était son
+ * erreur. `autoPlay` rétablit le déroulé immédiat pour qui le préfère.
+ *
+ * Les flèches interrompent le défilement plutôt que de lutter contre lui.
+ */
 export function useLineReplay(
   startFen: string,
   moves: LineMove[],
-  active: boolean
+  active: boolean,
+  autoPlay = false
 ): LineReplay {
   const frames = useMemo(() => buildFrames(startFen, moves), [startFen, moves]);
   const [step, setStep] = useState(0);
+  const [playing, setPlaying] = useState(false);
 
+  const shouldStart = active && autoPlay;
   useEffect(() => {
     setStep(0);
-  }, [frames]);
+    setPlaying(shouldStart);
+  }, [frames, shouldStart]);
 
-  const atEnd = step >= frames.length - 1;
+  const last = frames.length - 1;
+  const atEnd = step >= last;
 
   useEffect(() => {
-    if (!active || atEnd) return;
+    if (!active || !playing) return;
+    if (atEnd) {
+      setPlaying(false);
+      return;
+    }
     const timer = setTimeout(
       () => setStep((previous) => previous + 1),
       REPLAY_INTERVAL_MS
     );
     return () => clearTimeout(timer);
-  }, [active, atEnd, step]);
+  }, [active, playing, atEnd, step]);
 
-  const restart = useCallback(() => setStep(0), []);
-  const next = useCallback(
-    () => setStep((previous) => Math.min(previous + 1, frames.length - 1)),
-    [frames.length]
-  );
+  const play = useCallback(() => {
+    setStep((current) => (current >= last ? 0 : current));
+    setPlaying(true);
+  }, [last]);
+
+  const pause = useCallback(() => setPlaying(false), []);
+
+  const next = useCallback(() => {
+    setPlaying(false);
+    setStep((previous) => Math.min(previous + 1, last));
+  }, [last]);
+
+  const previous = useCallback(() => {
+    setPlaying(false);
+    setStep((current) => Math.max(current - 1, 0));
+  }, []);
 
   return {
-    frame: frames[Math.min(step, frames.length - 1)],
+    frame: frames[Math.min(step, last)],
     step,
-    total: frames.length - 1,
+    total: last,
+    atStart: step <= 0,
     atEnd,
-    restart,
+    playing,
+    play,
+    pause,
     next,
+    previous,
   };
 }

@@ -15,6 +15,9 @@ function makeMistake(overrides: Partial<Mistake> = {}): Mistake {
     fen: '4k3/8/8/3q4/8/8/8/3RK3 w - - 0 1',
     ply_number: 20,
     move_played: 'Rd2',
+    previous_move: { san: 'Qd5', uci: 'd8d5' },
+    solution: [{ san: 'Rxd5', uci: 'd1d5' }],
+    solution_gain: { type: 'material', value: 9 },
     accepted_moves: [
       { san: 'Rxd5', uci: 'd1d5', cp: 900, mate: null, pv: [] },
     ],

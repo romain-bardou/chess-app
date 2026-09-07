@@ -5,6 +5,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
   type StyleProp,
@@ -81,18 +82,22 @@ export function Button({
   onPress,
   variant = 'primary',
   disabled = false,
+  accessibilityLabel,
   style,
 }: {
   label: string;
   onPress: () => void;
   variant?: 'primary' | 'secondary';
   disabled?: boolean;
+  /** À renseigner quand le libellé est un symbole (flèches de variante). */
+  accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 }) {
   const primary = variant === 'primary';
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
@@ -110,6 +115,32 @@ export function Button({
         {label}
       </Text>
     </Pressable>
+  );
+}
+
+/** Réglage booléen : un libellé et son interrupteur, sur une ligne. */
+export function Toggle({
+  label,
+  value,
+  onValueChange,
+}: {
+  label: string;
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+}) {
+  return (
+    <View style={styles.toggle}>
+      <AppText muted variant="label" style={styles.toggleLabel}>
+        {label}
+      </AppText>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        accessibilityLabel={label}
+        trackColor={{ false: Colors.border, true: Colors.accent }}
+        thumbColor={Colors.surface}
+      />
+    </View>
   );
 }
 
@@ -213,6 +244,15 @@ const styles = StyleSheet.create({
   },
   buttonDimmed: {
     opacity: 0.6,
+  },
+  toggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: Spacing.sm,
+  },
+  toggleLabel: {
+    flexShrink: 1,
   },
   chip: {
     paddingVertical: Spacing.xs + 2,

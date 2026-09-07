@@ -21,7 +21,7 @@ const scheduler = fsrs(generatorParameters());
  * repousserait les cartes bien trop loin.
  */
 export const BASE_SECONDS = 10;
-/** Temps ajouté par demi-coup de `punishment_pv`. */
+/** Temps ajouté par demi-coup de variante à voir. */
 export const SECONDS_PER_PLY = 5;
 /** En dessous de ce ratio du temps attendu, la carte est jugée facile. */
 export const EASY_RATIO = 0.6;
@@ -120,7 +120,13 @@ export function reviewMistake(
   elapsedSeconds: number,
   now: Date = new Date()
 ): ReviewOutcome {
-  const grade = gradeAttempt(correct, elapsedSeconds, mistake.punishment_pv.length);
+  // La longueur de référence est celle de la plus longue des deux variantes :
+  // un puzzle en trois coups demande plus de temps qu'une réfutation courte.
+  const plies = Math.max(
+    mistake.punishment_pv.length,
+    mistake.solution?.length ?? 0
+  );
+  const grade = gradeAttempt(correct, elapsedSeconds, plies);
   const { card } = scheduler.next(toCard(mistake, now), now, grade);
 
   return {

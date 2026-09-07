@@ -18,6 +18,15 @@ export interface AcceptedMove extends LineMove {
   pv: LineMove[];
 }
 
+/**
+ * Ce que rapporte la solution d'un puzzle. Une carte n'est créée que si la
+ * variante correcte débouche sur l'un des deux.
+ */
+export type SolutionGain =
+  | { type: 'mate' }
+  /** Pions gagnés par rapport à la position de départ. */
+  | { type: 'material'; value: number };
+
 /** État `ts-fsrs` sérialisé (voir supabase/migrations/004_fsrs_card.sql). */
 export interface StoredFsrsCard {
   due: string;
@@ -38,7 +47,15 @@ export interface Mistake {
   fen: string;
   ply_number: number;
   move_played: string;
+  /** Coup adverse qui a amené la position. Null sur les cartes d'avant la 005. */
+  previous_move: LineMove | null;
   accepted_moves: AcceptedMove[];
+  /**
+   * Variante à jouer, en alternance (solveur, adversaire, solveur, …), coupée
+   * dès que le gain est encaissé. Null ou vide : puzzle à un seul coup.
+   */
+  solution: LineMove[] | null;
+  solution_gain: SolutionGain | null;
   punishment_pv: LineMove[];
   category: Category;
   themes: string[];

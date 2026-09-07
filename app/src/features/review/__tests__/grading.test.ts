@@ -1,4 +1,8 @@
-import { isAcceptedMove, toUci } from '@/features/review/grading';
+import {
+  isAcceptedMove,
+  matchesLineMove,
+  toUci,
+} from '@/features/review/grading';
 import type { AcceptedMove } from '@/lib/types';
 
 const accepted: AcceptedMove[] = [
@@ -50,6 +54,27 @@ describe('isAcceptedMove', () => {
     expect(isAcceptedMove({ from: 'd1', to: 'd5', san: 'Rxd5' }, sanOnly)).toBe(
       true
     );
+  });
+});
+
+describe('matchesLineMove', () => {
+  it('suit la ligne, pas la liste des coups acceptés', () => {
+    const line = { san: 'Rxd5', uci: 'd1d5' };
+    expect(matchesLineMove({ from: 'd1', to: 'd5', san: 'Rxd5' }, line)).toBe(
+      true
+    );
+    expect(matchesLineMove({ from: 'd1', to: 'd4', san: 'Rd4' }, line)).toBe(
+      false
+    );
+  });
+
+  it('retombe sur le SAN quand l UCI est absent', () => {
+    expect(
+      matchesLineMove({ from: 'd1', to: 'd5', san: 'Rxd5' }, {
+        san: 'Rxd5',
+        uci: '',
+      })
+    ).toBe(true);
   });
 });
 

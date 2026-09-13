@@ -1,6 +1,6 @@
-import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, EmptyState, Loader, Panel, Screen } from '@/components/ui';
 import { fetchGlobalStats, fetchThemeStats } from '@/features/review/api';
@@ -19,6 +19,9 @@ function formatPercent(value: number): string {
   return `${Math.round(value * 100)} %`;
 }
 
+/** Rangées visibles d'emblée dans « Par thème tactique » avant « Voir plus ». */
+const THEME_PREVIEW_COUNT = 6;
+
 export function StatsScreen() {
   const router = useRouter();
   const { signOut } = useAuth();
@@ -26,6 +29,7 @@ export function StatsScreen() {
   const [themes, setThemes] = useState<ThemeStat[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
+  const [showAllThemes, setShowAllThemes] = useState(false);
 
   const load = useCallback(async () => {
     setStatus('loading');
@@ -43,9 +47,14 @@ export function StatsScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Sur focus plutôt qu'au montage : l'onglet reste monté par Expo Router, un
+  // retour depuis une session de révision ne rechargerait jamais les stats
+  // sinon.
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load])
+  );
 
   if (status === 'loading') {
     return (
@@ -91,6 +100,18 @@ export function StatsScreen() {
     if (right === null) return -1;
     return left - right;
   });
+  // Un thème jamais tenté n'est pas une performance faible : le mélanger au
+  // classement laisserait croire à un score de 0 %.
+  const attempted = ranked.filter(
+    (row) => accuracy(row.correct, row.incorrect) !== null
+  );
+  const untried = ranked.filter(
+    (row) => accuracy(row.correct, row.incorrect) === null
+  );
+  const visibleAttempted = showAllThemes
+    ? attempted
+    : attempted.slice(0, THEME_PREVIEW_COUNT);
+  const hiddenCount = attempted.length - visibleAttempted.length;
 
   return (
     <Screen scroll>
@@ -102,7 +123,7 @@ export function StatsScreen() {
         <AppText variant="heading">{t('stats.overview')}</AppText>
         <View style={styles.metrics}>
           <Metric label={t('stats.cards')} value={String(global.cards)} />
-          <Metric label={t('stats.due')} value={String(global.due)} />
+          <Metric label={t('stats.due')} value={String(global.due)} emphasize />
           <Metric
             label={t('stats.accuracy')}
             value={overall === null ? '—' : formatPercent(overall)}
@@ -117,7 +138,9 @@ export function StatsScreen() {
             label={t('stats.gamesAnalyzed')}
             value={String(global.games_analyzed)}
           />
-          <Metric label="" value="" />
+          {/* Espaceur muet : aligne cette rangée de deux sur la grille à trois
+              colonnes de la rangée du dessus, sans nœud de texte vide. */}
+          <View style={styles.metric} />
         </View>
       </Panel>
 
@@ -140,7 +163,7 @@ export function StatsScreen() {
         {t('stats.byTheme')}
       </AppText>
 
-      {ranked.map((row) => (
+      {visibleAttempted.map((row) => (
         <ThemeRow
           key={row.theme}
           row={row}
@@ -150,20 +173,66 @@ export function StatsScreen() {
         />
       ))}
 
+      {hiddenCount > 0 ? (
+        <Button
+          label={t('stats.showMoreThemes', { count: hiddenCount })}
+          variant="secondary"
+          onPress={() => setShowAllThemes(true)}
+          style={styles.showMore}
+        />
+      ) : null}
+
+      {untried.length > 0 ? (
+        <>
+          <AppText muted variant="label" style={styles.sectionTitle}>
+            {t('stats.untriedThemes')}
+          </AppText>
+          {untried.map((row) => (
+            <ThemeRow
+              key={row.theme}
+              row={row}
+              onTrain={() =>
+                router.push({ pathname: '/', params: { theme: row.theme } })
+              }
+            />
+          ))}
+        </>
+      ) : null}
+
       <Button
         label={t('auth.signOut')}
         variant="secondary"
-        onPress={() => void signOut()}
+        onPress={() =>
+          Alert.alert(t('auth.signOutConfirm'), '', [
+            { text: t('common.cancel'), style: 'cancel' },
+            {
+              text: t('auth.signOut'),
+              style: 'destructive',
+              onPress: () => void signOut(),
+            },
+          ])
+        }
         style={styles.signOut}
       />
     </Screen>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({
+  label,
+  value,
+  emphasize = false,
+}: {
+  label: string;
+  value: string;
+  /** Ce chiffre pilote l'action à mener maintenant : il tranche sur les 7 autres. */
+  emphasize?: boolean;
+}) {
   return (
     <View style={styles.metric}>
-      <AppText variant="title">{value}</AppText>
+      <AppText variant="title" color={emphasize ? Colors.accent : undefined}>
+        {value}
+      </AppText>
       <AppText muted variant="label">
         {label}
       </AppText>
@@ -173,16 +242,24 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function ThemeRow({ row, onTrain }: { row: ThemeStat; onTrain: () => void }) {
   const rate = accuracy(row.correct, row.incorrect);
+  const rateLabel = rate === null ? t('stats.noAttempts') : formatPercent(rate);
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={t('stats.trainTheme')}
+      // Le libellé explicite ne redit pas juste le texte visible : sans lui,
+      // chaque rangée s'annoncerait avec le même intitulé générique.
+      accessibilityLabel={`${translateTheme(row.theme)}, ${rateLabel}. ${t('stats.trainTheme')}`}
       onPress={onTrain}
       style={({ pressed }) => [styles.themeRow, pressed && styles.pressed]}>
       <View style={styles.themeHeader}>
-        <AppText variant="mono">{translateTheme(row.theme)}</AppText>
+        <AppText
+          variant="mono"
+          numberOfLines={1}
+          style={styles.themeName}>
+          {translateTheme(row.theme)}
+        </AppText>
         <AppText muted variant="label">
-          {rate === null ? t('stats.noAttempts') : formatPercent(rate)}
+          {rateLabel}
         </AppText>
       </View>
       <View style={styles.track}>
@@ -237,6 +314,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'space-between',
+  },
+  themeName: {
+    flexShrink: 1,
+    marginRight: Spacing.sm,
+  },
+  showMore: {
+    alignSelf: 'flex-start',
+    marginBottom: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
   },
   track: {
     height: 6,

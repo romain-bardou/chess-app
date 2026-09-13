@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 
 import { Chessboard, type BoardMove } from '@/chess/Chessboard';
 import { uciSquares } from '@/chess/play';
@@ -22,7 +29,7 @@ import { GRADE_LABELS, reviewMistake } from '@/lib/fsrs';
 import { t, translateTheme, type TranslationKey } from '@/lib/i18n';
 import { AUTO_PLAY_LINE, SHUFFLE_QUEUE, useStoredFlag } from '@/lib/settings';
 import type { LineMove, Mistake, SolutionGain } from '@/lib/types';
-import { Colors, Spacing } from '@/theme/atelier';
+import { Colors, Radius, Spacing } from '@/theme/atelier';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const MAX_BOARD_SIZE = 440;
@@ -64,12 +71,17 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
   const [phase, setPhase] = useState<Phase>('solving');
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [replaySource, setReplaySource] = useState<ReplaySource>('punishment');
+  // L'issue (verdict + coups) s'affiche seule ; la variante explorable ne
+  // s'ouvre qu'à la demande, pour ne pas noyer le verdict sous les contrôles.
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   // Après une erreur, la variante attend le joueur ; ce réglage la déroule
   // tout de suite pour qui préfère voir la suite sans rien demander.
   const [autoPlayLine, setAutoPlayLine] = useStoredFlag(AUTO_PLAY_LINE, false);
   const startedAt = useRef(Date.now());
+  /** Rejoue le dernier enregistrement raté ; posé à chaque tentative. */
+  const retrySaveRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     setTheme(initialTheme);
@@ -93,6 +105,7 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
     setPhase('solving');
     setAttempt(null);
     setReplaySource('punishment');
+    setDetailsOpen(false);
     setSaveError(null);
     setElapsed(0);
   }, [current?.id]);
@@ -171,16 +184,33 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
       });
       // Un coup raté ouvre sa propre variante — sauf s'il est celui de la
       // partie : la réfutation enregistrée le prolonge, et vaut mieux qu'un
-      // coup isolé.
+      // coup isolé. Repli sur ce qui existe vraiment : une fiche sans
+      // réfutation ni solution enregistrées ne doit pas pointer sur une
+      // source vide (l'onglet correspondant ne s'afficherait même pas).
       const isGameMove =
         run.moveNumber === 1 && move.san === current.move_played;
-      setReplaySource(!correct && !isGameMove ? 'attempt' : 'punishment');
+      const hasPunishment = current.punishment_pv.length > 0;
+      const hasSolution = (current.solution?.length ?? 0) > 0;
+      const source: ReplaySource =
+        !correct && !isGameMove
+          ? 'attempt'
+          : hasPunishment
+            ? 'punishment'
+            : hasSolution
+              ? 'solution'
+              : 'attempt';
+      setReplaySource(source);
       setElapsed(Math.floor(seconds));
       setPhase(correct ? 'correct' : 'wrong');
 
-      saveReview(current.id, outcome.update).catch((cause: unknown) =>
-        setSaveError(cause instanceof Error ? cause.message : String(cause))
-      );
+      const persist = () => {
+        setSaveError(null);
+        saveReview(current.id, outcome.update).catch((cause: unknown) =>
+          setSaveError(cause instanceof Error ? cause.message : String(cause))
+        );
+      };
+      retrySaveRef.current = persist;
+      persist();
     },
     [current, phase, run]
   );
@@ -253,7 +283,13 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
         {t('review.remaining', { count: queue.remaining })}
       </AppText>
 
-      <View style={styles.boardWrapper}>
+      <View
+        style={[
+          styles.boardWrapper,
+          // Le tampon adverse n'a pas d'autre signal : l'échiquier se ternit
+          // le temps que la réponse se joue, pour ne pas passer pour figé.
+          phase === 'solving' && run.waiting && styles.boardWaiting,
+        ]}>
         <Chessboard
           fen={board.fen}
           orientation={solverColor}
@@ -283,6 +319,12 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
               })}
             </AppText>
           ) : null}
+          <Button
+            label={t('review.skip')}
+            variant="secondary"
+            onPress={queue.advance}
+            style={styles.skip}
+          />
         </>
       ) : (
         <Outcome
@@ -292,6 +334,8 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
           replay={replay}
           replaySource={replaySource}
           onReplaySource={setReplaySource}
+          detailsOpen={detailsOpen}
+          onToggleDetails={() => setDetailsOpen((open) => !open)}
           autoPlayLine={autoPlayLine}
           onAutoPlayLine={setAutoPlayLine}
           onNext={queue.advance}
@@ -299,9 +343,16 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
       )}
 
       {saveError ? (
-        <AppText color={Colors.danger} style={styles.prompt}>
-          {saveError}
-        </AppText>
+        <View style={styles.saveError}>
+          <AppText color={Colors.danger} style={styles.saveErrorText}>
+            {saveError}
+          </AppText>
+          <Button
+            label={t('common.retry')}
+            variant="secondary"
+            onPress={() => retrySaveRef.current?.()}
+          />
+        </View>
       ) : null}
     </Screen>
   );
@@ -371,6 +422,8 @@ function Outcome({
   replay,
   replaySource,
   onReplaySource,
+  detailsOpen,
+  onToggleDetails,
   autoPlayLine,
   onAutoPlayLine,
   onNext,
@@ -381,6 +434,8 @@ function Outcome({
   replay: LineReplay;
   replaySource: ReplaySource;
   onReplaySource: (source: ReplaySource) => void;
+  detailsOpen: boolean;
+  onToggleDetails: () => void;
   autoPlayLine: boolean;
   onAutoPlayLine: (value: boolean) => void;
   onNext: () => void;
@@ -428,48 +483,60 @@ function Outcome({
               {t('review.expected', { move: expected })}
             </AppText>
           ) : null}
-          <LineFilter
-            selected={replaySource}
-            onSelect={onReplaySource}
-            hasAttempt={Boolean(attempt?.move)}
-            hasSolution={hasSolution}
-            hasPunishment={hasPunishment}
+
+          <Button
+            label={detailsOpen ? t('review.hideDetails') : t('review.showDetails')}
+            variant="secondary"
+            onPress={onToggleDetails}
+            style={styles.detailsToggle}
           />
-          <AppText muted variant="label" style={styles.outcomeLine}>
-            {t('review.exploreHint')}
-          </AppText>
-          <ReplayControls replay={replay} />
-          <View style={styles.lineActions}>
-            {replay.total > 0 ? (
-              <Button
-                // La variante ne se déroule pas d'elle-même : on regarde la
-                // position ratée aussi longtemps qu'on veut avant de la voir.
-                label={
-                  replay.playing
-                    ? t('review.pauseLine')
-                    : replay.atEnd
-                      ? t('review.replay')
-                      : t('review.playLine')
-                }
-                variant="secondary"
-                onPress={replay.playing ? replay.pause : replay.play}
-                style={styles.action}
+
+          {detailsOpen ? (
+            <>
+              <LineFilter
+                selected={replaySource}
+                onSelect={onReplaySource}
+                hasAttempt={Boolean(attempt?.move)}
+                hasSolution={hasSolution}
+                hasPunishment={hasPunishment}
               />
-            ) : null}
-            {replay.branched ? (
-              <Button
-                label={t('review.resetLine')}
-                variant="secondary"
-                onPress={replay.reset}
-                style={styles.action}
+              <AppText muted variant="label" style={styles.outcomeLine}>
+                {t('review.exploreHint')}
+              </AppText>
+              <ReplayControls replay={replay} />
+              <View style={styles.lineActions}>
+                {replay.total > 0 ? (
+                  <Button
+                    // La variante ne se déroule pas d'elle-même : on regarde la
+                    // position ratée aussi longtemps qu'on veut avant de la voir.
+                    label={
+                      replay.playing
+                        ? t('review.pauseLine')
+                        : replay.atEnd
+                          ? t('review.replay')
+                          : t('review.playLine')
+                    }
+                    variant="secondary"
+                    onPress={replay.playing ? replay.pause : replay.play}
+                    style={styles.action}
+                  />
+                ) : null}
+                {replay.branched ? (
+                  <Button
+                    label={t('review.resetLine')}
+                    variant="secondary"
+                    onPress={replay.reset}
+                    style={styles.action}
+                  />
+                ) : null}
+              </View>
+              <Toggle
+                label={t('review.autoPlayLine')}
+                value={autoPlayLine}
+                onValueChange={onAutoPlayLine}
               />
-            ) : null}
-          </View>
-          <Toggle
-            label={t('review.autoPlayLine')}
-            value={autoPlayLine}
-            onValueChange={onAutoPlayLine}
-          />
+            </>
+          ) : null}
         </>
       ) : null}
 
@@ -532,9 +599,8 @@ function ReplayControls({ replay }: { replay: LineReplay }) {
   if (replay.total <= 0) return null;
   return (
     <View style={styles.replayControls}>
-      <Button
-        label="◀"
-        variant="secondary"
+      <StepButton
+        direction="back"
         accessibilityLabel={t('review.stepBack')}
         disabled={replay.atStart}
         onPress={replay.previous}
@@ -542,14 +608,51 @@ function ReplayControls({ replay }: { replay: LineReplay }) {
       <AppText muted variant="label">
         {t('review.step', { step: replay.step, total: replay.total })}
       </AppText>
-      <Button
-        label="▶"
-        variant="secondary"
+      <StepButton
+        direction="forward"
         accessibilityLabel={t('review.stepForward')}
         disabled={replay.atEnd}
         onPress={replay.next}
       />
     </View>
+  );
+}
+
+/** Chevron dessiné en trait, plutôt qu'un glyphe Unicode ◀ / ▶. */
+function StepButton({
+  direction,
+  disabled = false,
+  accessibilityLabel,
+  onPress,
+}: {
+  direction: 'back' | 'forward';
+  disabled?: boolean;
+  accessibilityLabel: string;
+  onPress: () => void;
+}) {
+  const d = direction === 'back' ? 'M12 5L7 11L12 17' : 'M8 5L13 11L8 17';
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.stepButton,
+        (pressed || disabled) && styles.stepButtonDimmed,
+      ]}>
+      <Svg width={22} height={22} viewBox="0 0 22 22">
+        <Path
+          d={d}
+          stroke={Colors.accent}
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      </Svg>
+    </Pressable>
   );
 }
 
@@ -578,11 +681,30 @@ const styles = StyleSheet.create({
   boardWrapper: {
     alignItems: 'center',
   },
+  boardWaiting: {
+    opacity: 0.55,
+  },
   turn: {
     marginTop: Spacing.md,
   },
   prompt: {
     marginTop: Spacing.xs,
+  },
+  skip: {
+    alignSelf: 'flex-start',
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+  },
+  saveError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: Spacing.sm,
+    columnGap: Spacing.sm,
+  },
+  saveErrorText: {
+    flex: 1,
   },
   outcome: {
     marginTop: Spacing.sm,
@@ -594,6 +716,12 @@ const styles = StyleSheet.create({
   },
   outcomeLine: {
     marginTop: Spacing.xs,
+  },
+  detailsToggle: {
+    alignSelf: 'flex-start',
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
   },
   themes: {
     flexDirection: 'row',
@@ -619,6 +747,18 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     marginTop: Spacing.sm,
     columnGap: Spacing.sm,
+  },
+  stepButton: {
+    width: 44,
+    height: 44,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepButtonDimmed: {
+    opacity: 0.6,
   },
   actions: {
     flexDirection: 'row',

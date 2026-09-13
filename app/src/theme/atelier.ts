@@ -22,7 +22,8 @@ export const Colors = {
   surface: '#FFFBF3',
   border: '#E0CFB4',
   text: '#3B2412',
-  textMuted: '#8A7358',
+  /** Assombri depuis #8A7358 : le ton d'origine passait sous 4.5:1 sur `surface`. */
+  textMuted: '#7A6349',
   accent: '#8B5E34',
   accentText: '#F7F1E3',
   success: '#4C7A3F',

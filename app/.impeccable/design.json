@@ -1,0 +1,243 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-13T10:22:03Z",
+  "title": "Design System: Atelier",
+  "extensions": {
+    "colorMeta": {
+      "walnut-brown": {
+        "role": "primary",
+        "displayName": "Walnut Brown",
+        "canonical": "oklch(52% 0.09 55)",
+        "tonalRamp": [
+          "oklch(15% 0.06 55)",
+          "oklch(28% 0.08 55)",
+          "oklch(40% 0.09 55)",
+          "oklch(52% 0.09 55)",
+          "oklch(64% 0.08 55)",
+          "oklch(76% 0.06 55)",
+          "oklch(88% 0.03 55)",
+          "oklch(95% 0.01 55)"
+        ]
+      },
+      "moss-green": {
+        "role": "secondary",
+        "displayName": "Moss Green",
+        "canonical": "oklch(48% 0.09 140)",
+        "tonalRamp": [
+          "oklch(14% 0.06 140)",
+          "oklch(26% 0.08 140)",
+          "oklch(37% 0.09 140)",
+          "oklch(48% 0.09 140)",
+          "oklch(60% 0.08 140)",
+          "oklch(73% 0.06 140)",
+          "oklch(86% 0.03 140)",
+          "oklch(95% 0.01 140)"
+        ]
+      },
+      "burnt-terracotta": {
+        "role": "tertiary",
+        "displayName": "Burnt Terracotta",
+        "canonical": "oklch(42% 0.12 35)",
+        "tonalRamp": [
+          "oklch(13% 0.08 35)",
+          "oklch(23% 0.10 35)",
+          "oklch(33% 0.11 35)",
+          "oklch(42% 0.12 35)",
+          "oklch(55% 0.11 35)",
+          "oklch(69% 0.08 35)",
+          "oklch(83% 0.04 35)",
+          "oklch(94% 0.02 35)"
+        ]
+      },
+      "warm-parchment": {
+        "role": "neutral",
+        "displayName": "Warm Parchment",
+        "canonical": "oklch(95% 0.02 75)",
+        "tonalRamp": [
+          "oklch(20% 0.02 75)",
+          "oklch(32% 0.02 75)",
+          "oklch(45% 0.02 75)",
+          "oklch(58% 0.02 75)",
+          "oklch(70% 0.02 75)",
+          "oklch(82% 0.02 75)",
+          "oklch(90% 0.02 75)",
+          "oklch(95% 0.02 75)"
+        ]
+      },
+      "ivory-surface": {
+        "role": "neutral",
+        "displayName": "Ivory Surface",
+        "canonical": "oklch(98% 0.01 80)",
+        "tonalRamp": [
+          "oklch(22% 0.01 80)",
+          "oklch(34% 0.01 80)",
+          "oklch(47% 0.01 80)",
+          "oklch(60% 0.01 80)",
+          "oklch(73% 0.01 80)",
+          "oklch(86% 0.01 80)",
+          "oklch(93% 0.01 80)",
+          "oklch(98% 0.01 80)"
+        ]
+      },
+      "soft-tan": {
+        "role": "neutral",
+        "displayName": "Soft Tan",
+        "canonical": "oklch(85% 0.04 70)",
+        "tonalRamp": [
+          "oklch(18% 0.03 70)",
+          "oklch(30% 0.04 70)",
+          "oklch(43% 0.04 70)",
+          "oklch(56% 0.04 70)",
+          "oklch(68% 0.04 70)",
+          "oklch(78% 0.04 70)",
+          "oklch(85% 0.04 70)",
+          "oklch(93% 0.02 70)"
+        ]
+      },
+      "espresso": {
+        "role": "neutral",
+        "displayName": "Espresso",
+        "canonical": "oklch(20% 0.06 40)",
+        "tonalRamp": [
+          "oklch(15% 0.05 40)",
+          "oklch(20% 0.06 40)",
+          "oklch(30% 0.06 40)",
+          "oklch(42% 0.05 40)",
+          "oklch(55% 0.05 40)",
+          "oklch(68% 0.04 40)",
+          "oklch(82% 0.03 40)",
+          "oklch(93% 0.01 40)"
+        ]
+      },
+      "muted-taupe": {
+        "role": "neutral",
+        "displayName": "Muted Taupe",
+        "canonical": "oklch(55% 0.04 50)",
+        "tonalRamp": [
+          "oklch(17% 0.03 50)",
+          "oklch(29% 0.04 50)",
+          "oklch(42% 0.04 50)",
+          "oklch(55% 0.04 50)",
+          "oklch(67% 0.03 50)",
+          "oklch(79% 0.03 50)",
+          "oklch(88% 0.02 50)",
+          "oklch(95% 0.01 50)"
+        ]
+      },
+      "cream-ink": {
+        "role": "neutral",
+        "displayName": "Cream Ink",
+        "canonical": "oklch(96% 0.02 80)",
+        "tonalRamp": [
+          "oklch(24% 0.02 80)",
+          "oklch(37% 0.02 80)",
+          "oklch(50% 0.02 80)",
+          "oklch(62% 0.02 80)",
+          "oklch(74% 0.02 80)",
+          "oklch(86% 0.02 80)",
+          "oklch(93% 0.02 80)",
+          "oklch(96% 0.02 80)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "title": { "displayName": "Title", "purpose": "Screen titles; the large number in a stat tile." },
+      "heading": { "displayName": "Heading", "purpose": "Panel section headers; the Correct/Incorrect outcome banner." },
+      "body": { "displayName": "Body", "purpose": "Default running text — prompts, descriptions, empty states." },
+      "label": { "displayName": "Label", "purpose": "Button/chip labels, muted captions and metadata." },
+      "mono": { "displayName": "Mono", "purpose": "Theme-name line on a stats theme row." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "piece-travel", "value": "190ms cubic-bezier(0.25, 0.46, 0.45, 0.94)", "purpose": "Chessboard piece translation between squares (Easing.out(Easing.quad))." }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Highest-emphasis action: submit, next puzzle, retry.",
+      "html": "<button class=\"ds-btn-primary\">SUIVANT</button>",
+      "css": ".ds-btn-primary { background: #8B5E34; color: #F7F1E3; padding: 12px 24px; border-radius: 22px; border: none; font-size: 13px; font-weight: 600; text-align: center; transition: opacity 0.15s; } .ds-btn-primary:hover, .ds-btn-primary:focus-visible { opacity: 0.85; outline: none; } .ds-btn-primary:active { opacity: 0.6; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Reversible/secondary action: replay controls, sign out, alternate line.",
+      "html": "<button class=\"ds-btn-secondary\">REJOUER</button>",
+      "css": ".ds-btn-secondary { background: transparent; color: #8B5E34; padding: 12px 24px; border-radius: 22px; border: 1px solid #8B5E34; font-size: 13px; font-weight: 600; text-align: center; transition: opacity 0.15s; } .ds-btn-secondary:hover, .ds-btn-secondary:focus-visible { opacity: 0.85; outline: none; } .ds-btn-secondary:active { opacity: 0.6; }"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Theme/order filter pill, unselected state.",
+      "html": "<button class=\"ds-chip\">Fourchette</button>",
+      "css": ".ds-chip { background: #FFFBF3; color: #7A6349; border: 1px solid #E0CFB4; border-radius: 22px; padding: 6px 12px; font-size: 13px; font-weight: 600; } .ds-chip:hover, .ds-chip:focus-visible { opacity: 0.85; outline: none; }"
+    },
+    {
+      "name": "Chip Selected",
+      "kind": "chip",
+      "refersTo": "chip-selected",
+      "description": "Selected theme/order filter pill — shares the primary button's accent/text pairing.",
+      "html": "<button class=\"ds-chip-selected\" aria-pressed=\"true\">Fourchette</button>",
+      "css": ".ds-chip-selected { background: #8B5E34; color: #F7F1E3; border: 1px solid #8B5E34; border-radius: 22px; padding: 6px 12px; font-size: 13px; font-weight: 600; }"
+    },
+    {
+      "name": "Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Base surface for grouped content — stats blocks, the review outcome card.",
+      "html": "<div class=\"ds-panel\"><p class=\"ds-panel-heading\">Aperçu</p><p class=\"ds-panel-body\">Contenu du panneau.</p></div>",
+      "css": ".ds-panel { background: #FFFBF3; border: 1px solid #E0CFB4; border-radius: 14px; padding: 16px; } .ds-panel-heading { font-size: 19px; font-weight: 700; color: #3B2412; margin: 0 0 8px; } .ds-panel-body { font-size: 16px; font-weight: 400; color: #3B2412; margin: 0; }"
+    },
+    {
+      "name": "Stat Tile",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Bare number-over-caption pair inside a Panel; no border/background of its own.",
+      "html": "<div class=\"ds-stat\"><span class=\"ds-stat-value\">42</span><span class=\"ds-stat-label\">Cartes</span></div>",
+      "css": ".ds-stat { display: flex; flex-direction: column; gap: 2px; } .ds-stat-value { font-size: 26px; font-weight: 700; color: #3B2412; } .ds-stat-label { font-size: 13px; font-weight: 600; color: #7A6349; }"
+    },
+    {
+      "name": "Theme Progress Row",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Pressable per-theme accuracy row with a threshold-colored progress track (stats screen signature).",
+      "html": "<button class=\"ds-theme-row\"><div class=\"ds-theme-row-header\"><span class=\"ds-theme-row-name\">Fourchette</span><span class=\"ds-theme-row-rate\">72 %</span></div><div class=\"ds-theme-row-track\"><div class=\"ds-theme-row-fill\" style=\"width:72%\"></div></div><span class=\"ds-theme-row-meta\">18 cartes · 3 à revoir</span></button>",
+      "css": ".ds-theme-row { display: block; width: 100%; text-align: left; background: #FFFBF3; border: 1px solid #E0CFB4; border-radius: 14px; padding: 16px; margin-bottom: 8px; } .ds-theme-row:hover, .ds-theme-row:focus-visible { opacity: 0.85; outline: none; } .ds-theme-row-header { display: flex; align-items: baseline; justify-content: space-between; } .ds-theme-row-name { font-size: 15px; font-weight: 600; color: #3B2412; } .ds-theme-row-rate { font-size: 13px; font-weight: 600; color: #7A6349; } .ds-theme-row-track { height: 6px; border-radius: 3px; background: #E0CFB4; margin-top: 8px; overflow: hidden; } .ds-theme-row-fill { height: 100%; border-radius: 3px; background: #4C7A3F; } .ds-theme-row-meta { display: block; margin-top: 4px; font-size: 13px; font-weight: 600; color: #7A6349; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "L'Établi du Luthier",
+    "overview": "Atelier is a solo instrument, not a showcase: one person sitting down with their own chess mistakes, the way a luthier sits at a workbench with a single instrument in front of them. The palette is warm, wood-grained, and restrained — a single walnut accent against parchment and ivory, the same materials that build the chessboard itself. Surfaces are flat and hairline-bordered rather than shadowed or glossy: nothing floats, nothing performs. Every panel, chip, and button is cut from the same plain stock, in service of the board, which is the one place the app allows itself a flourish (a diagonal wood-grain gradient on every square). The app is deliberately light-only — no dark mode, no per-OS Material/Cupertino divergence — because it is one tool for one craftsperson, tuned once rather than adapted per visitor. Typography stays on the system default everywhere; the only \"custom\" typographic gesture is a small monospace-flavored label role reserved for theme names and notation-adjacent text.",
+    "keyCharacteristics": [
+      "One saturated accent (Walnut Brown) on an otherwise warm-neutral palette — sparse, not omnipresent.",
+      "Flat, hairline-bordered surfaces; no drop shadows anywhere in the system.",
+      "System font only, no custom typeface.",
+      "Light-only; no dark-mode variant exists or is planned.",
+      "The chessboard is the signature component: diagonal (155°) wood-grain gradients per square, animated piece travel, and overlay colors that deliberately reuse the UI's own semantic colors."
+    ],
+    "rules": [
+      { "name": "The One Accent Rule", "body": "Walnut Brown is the only saturated color that isn't semantic (success/error). It appears on primary actions, selection state, and the single most actionable number on a stats surface (e.g. Stats' \"Dues\" tile) — never as decoration or background fill, and never on more than one number at a time.", "section": "colors" },
+      { "name": "The Wood Grain Rule", "body": "Every board square is a 155°-angled two-stop linear gradient, not a flat fill: light squares run #E3C79A → #D2AD76, dark squares run #8B5E34 → #6E4623. Board overlays (selected square, legal-move markers, last-move highlight) are translucent reuses of Moss Green, Espresso, and a dedicated amber — the board never introduces a color the rest of the UI doesn't already use.", "section": "colors" },
+      { "name": "The No-Custom-Face Rule", "body": "Never introduce a font family. Every text role is a size/weight variation on the platform system font.", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "No box-shadow/elevation is used on any component. A component reads as \"raised\" only through its hairline border and the surface/background tonal contrast — never through a shadow.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep Walnut Brown to primary actions and selection state — it stays legible as \"the one thing to press\" precisely because it's rare (The One Accent Rule).",
+      "Do build new surfaces from the existing primitives (Screen, AppText, Panel, Button, Chip, Toggle) in src/components/ui.tsx rather than one-off styling.",
+      "Do use hairline borders + tonal surface steps for any new \"raised\" element, never a shadow.",
+      "Do reuse Moss Green / Burnt Terracotta for any new success/error state rather than introducing a new semantic color."
+    ],
+    "donts": [
+      "Don't add a dark-mode variant or branch on system color scheme — userInterfaceStyle is deliberately light.",
+      "Don't add box-shadow/elevation styling anywhere; depth comes from borders and tone only (The Flat-By-Default Rule).",
+      "Don't introduce a custom font family or a second accent color — the palette is deliberately one accent plus two semantic colors.",
+      "Don't give the board a color the rest of the UI doesn't already use — new board overlays should reuse an existing token (The Wood Grain Rule)."
+    ]
+  }
+}

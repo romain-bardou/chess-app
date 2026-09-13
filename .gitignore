@@ -13,6 +13,9 @@ node_modules/
 .expo/
 dist/
 
+# Etat de session de l'outil impeccable (bookkeeping local, pas du contenu projet)
+.impeccable/live/
+
 # OS
 .DS_Store
 Thumbs.db

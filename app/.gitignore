@@ -36,6 +36,9 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# Etat de session de l'outil impeccable (bookkeeping local, pas du contenu projet)
+.impeccable/live/
+
 example
 
 # generated native folders

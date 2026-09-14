@@ -98,3 +98,21 @@ export interface GlobalStats {
   blunders: number;
   games_analyzed: number;
 }
+
+/** Répartition des cartes par état `ts-fsrs` : New/Learning/Review/Relearning. */
+export interface FsrsStateStats {
+  new: number;
+  learning: number;
+  review: number;
+  relearning: number;
+}
+
+/** Nombre de cartes dues, réparti par jour à venir. */
+export interface DueForecast {
+  /** Déjà dues (échéance passée). */
+  overdue: number;
+  /** `date` au format `YYYY-MM-DD`, en heure locale. */
+  days: { date: string; count: number }[];
+  /** Dues après la fenêtre couverte par `days`. */
+  later: number;
+}

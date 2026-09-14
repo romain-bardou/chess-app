@@ -12,7 +12,6 @@ import {
   Loader,
   Panel,
   Screen,
-  Toggle,
 } from '@/components/ui';
 import { saveReview } from '@/features/review/api';
 import { bestMoveSan } from '@/features/review/grading';
@@ -52,11 +51,12 @@ interface Attempt {
   fen: string;
 }
 
-/** Ce que rapporte la solution, en une ligne. */
-function gainLabel(gain: SolutionGain | null): string | null {
-  if (!gain) return null;
-  if (gain.type === 'mate') return t('review.gainMate');
-  return t('review.gainMaterial', { value: gain.value });
+/** Points gagnés par la solution, affichés à côté du trait à jouer. */
+function pointsLabel(gain: SolutionGain | null): string | null {
+  if (!gain || gain.type !== 'material') return null;
+  return t(gain.value === 1 ? 'review.pointsOne' : 'review.pointsOther', {
+    value: gain.value,
+  });
 }
 
 export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | null }) {
@@ -79,7 +79,7 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
   const [saveError, setSaveError] = useState<string | null>(null);
   // Après une erreur, la variante attend le joueur ; ce réglage la déroule
   // tout de suite pour qui préfère voir la suite sans rien demander.
-  const [autoPlayLine, setAutoPlayLine] = useStoredFlag(AUTO_PLAY_LINE, false);
+  const [autoPlayLine] = useStoredFlag(AUTO_PLAY_LINE, false);
   // État (pas une ref) : `ElapsedLabel` en a besoin comme prop stable pour
   // faire tourner son propre chrono sans rerendre tout l'écran chaque
   // seconde — l'échiquier SVG est trop coûteux pour ça.
@@ -244,6 +244,7 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
   }
 
   const solverColor = current.fen.split(' ')[1] === 'w' ? 'w' : 'b';
+  const points = pointsLabel(current.solution_gain);
   const board =
     phase === 'wrong'
       ? {
@@ -256,17 +257,18 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
   return (
     <Screen scroll>
       <View style={styles.header}>
-        <AppText variant="title">{t('review.title')}</AppText>
+        <AppText variant="heading">
+          {t(
+            queue.remaining === 1 ? 'review.remainingOne' : 'review.remainingOther',
+            { count: queue.remaining }
+          )}
+        </AppText>
         <ElapsedLabel
           active={phase === 'solving' && run.ready}
           startedAt={startedAt}
           frozenSeconds={finalSecondsRef.current}
         />
       </View>
-
-      <AppText muted style={styles.remaining}>
-        {t('review.remaining', { count: queue.remaining })}
-      </AppText>
 
       <View
         style={[
@@ -287,9 +289,16 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
         />
       </View>
 
-      <AppText variant="heading" style={styles.turn}>
-        {solverColor === 'w' ? t('review.whiteToPlay') : t('review.blackToPlay')}
-      </AppText>
+      <View style={styles.turn}>
+        <AppText variant="heading">
+          {solverColor === 'w' ? t('review.whiteToPlay') : t('review.blackToPlay')}
+        </AppText>
+        {phase !== 'solving' && points ? (
+          <AppText muted variant="label">
+            {points}
+          </AppText>
+        ) : null}
+      </View>
 
       {phase === 'solving' ? (
         <>
@@ -321,8 +330,6 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
           onReplaySource={setReplaySource}
           detailsOpen={detailsOpen}
           onToggleDetails={() => setDetailsOpen((open) => !open)}
-          autoPlayLine={autoPlayLine}
-          onAutoPlayLine={setAutoPlayLine}
           onNext={queue.advance}
         />
       )}
@@ -384,8 +391,6 @@ function Outcome({
   onReplaySource,
   detailsOpen,
   onToggleDetails,
-  autoPlayLine,
-  onAutoPlayLine,
   onNext,
 }: {
   mistake: Mistake;
@@ -396,13 +401,10 @@ function Outcome({
   onReplaySource: (source: ReplaySource) => void;
   detailsOpen: boolean;
   onToggleDetails: () => void;
-  autoPlayLine: boolean;
-  onAutoPlayLine: (value: boolean) => void;
   onNext: () => void;
 }) {
   const correct = phase === 'correct';
   const expected = bestMoveSan(mistake.accepted_moves);
-  const gain = gainLabel(mistake.solution_gain);
   const hasSolution = (mistake.solution?.length ?? 0) > 0;
   const hasPunishment = mistake.punishment_pv.length > 0;
 
@@ -419,96 +421,73 @@ function Outcome({
         </AppText>
       </View>
 
-      {attempt ? (
-        <AppText muted style={styles.outcomeLine}>
-          {t('review.grade', {
-            grade: t(`grade.${attempt.gradeLabel}` as TranslationKey),
-          })}
-        </AppText>
-      ) : null}
-
-      {gain ? (
-        <AppText muted style={styles.outcomeLine}>
-          {gain}
-        </AppText>
-      ) : null}
-
       {!correct ? (
         <>
-          <AppText style={styles.outcomeLine}>
-            {t('review.playedInGame', { move: mistake.move_played })}
-          </AppText>
-          {expected ? (
-            <AppText style={styles.outcomeLine}>
-              {t('review.expected', { move: expected })}
-            </AppText>
-          ) : null}
-
-          <Button
-            label={detailsOpen ? t('review.hideDetails') : t('review.showDetails')}
-            variant="secondary"
-            onPress={onToggleDetails}
-            style={styles.detailsToggle}
+          <LineFilter
+            selected={replaySource}
+            onSelect={onReplaySource}
+            hasAttempt={Boolean(attempt?.move)}
+            hasSolution={hasSolution}
+            hasPunishment={hasPunishment}
           />
-
-          {detailsOpen ? (
-            <>
-              <LineFilter
-                selected={replaySource}
-                onSelect={onReplaySource}
-                hasAttempt={Boolean(attempt?.move)}
-                hasSolution={hasSolution}
-                hasPunishment={hasPunishment}
+          <ReplayControls replay={replay} />
+          {replay.branched ? (
+            <View style={styles.lineActions}>
+              <Button
+                label={t('review.resetLine')}
+                variant="secondary"
+                onPress={replay.reset}
+                style={styles.action}
               />
-              <AppText muted variant="label" style={styles.outcomeLine}>
-                {t('review.exploreHint')}
-              </AppText>
-              <ReplayControls replay={replay} />
-              <View style={styles.lineActions}>
-                {replay.total > 0 ? (
-                  <Button
-                    // La variante ne se déroule pas d'elle-même : on regarde la
-                    // position ratée aussi longtemps qu'on veut avant de la voir.
-                    label={
-                      replay.playing
-                        ? t('review.pauseLine')
-                        : replay.atEnd
-                          ? t('review.replay')
-                          : t('review.playLine')
-                    }
-                    variant="secondary"
-                    onPress={replay.playing ? replay.pause : replay.play}
-                    style={styles.action}
-                  />
-                ) : null}
-                {replay.branched ? (
-                  <Button
-                    label={t('review.resetLine')}
-                    variant="secondary"
-                    onPress={replay.reset}
-                    style={styles.action}
-                  />
-                ) : null}
-              </View>
-              <Toggle
-                label={t('review.autoPlayLine')}
-                value={autoPlayLine}
-                onValueChange={onAutoPlayLine}
-              />
-            </>
+            </View>
           ) : null}
+          <View style={styles.actions}>
+            <Button label={t('review.next')} onPress={onNext} style={styles.action} />
+          </View>
         </>
       ) : null}
 
-      <View style={styles.themes}>
-        {mistake.themes.map((theme) => (
-          <Chip key={theme} label={translateTheme(theme)} />
-        ))}
-      </View>
+      <Button
+        label={detailsOpen ? t('review.hideDetails') : t('review.showDetails')}
+        variant="secondary"
+        onPress={onToggleDetails}
+        style={styles.detailsToggle}
+      />
 
-      <View style={styles.actions}>
-        <Button label={t('review.next')} onPress={onNext} style={styles.action} />
-      </View>
+      {detailsOpen ? (
+        <>
+          {attempt ? (
+            <AppText muted style={styles.outcomeLine}>
+              {t('review.grade', {
+                grade: t(`grade.${attempt.gradeLabel}` as TranslationKey),
+              })}
+            </AppText>
+          ) : null}
+          {!correct ? (
+            <>
+              <AppText style={styles.outcomeLine}>
+                {t('review.playedInGame', { move: mistake.move_played })}
+              </AppText>
+              {expected ? (
+                <AppText style={styles.outcomeLine}>
+                  {t('review.expected', { move: expected })}
+                </AppText>
+              ) : null}
+            </>
+          ) : null}
+          <View style={styles.themes}>
+            {mistake.themes.map((theme) => (
+              <Chip key={theme} label={translateTheme(theme)} />
+            ))}
+          </View>
+        </>
+      ) : null}
+
+      {correct ? (
+        <View style={styles.actions}>
+          <Button label={t('review.next')} onPress={onNext} style={styles.action} />
+        </View>
+      ) : null}
     </Panel>
   );
 }
@@ -534,6 +513,7 @@ function LineFilter({
           label={t('review.lineAttempt')}
           selected={selected === 'attempt'}
           onPress={() => onSelect('attempt')}
+          style={styles.lineChip}
         />
       ) : null}
       {hasSolution ? (
@@ -541,6 +521,7 @@ function LineFilter({
           label={t('review.solutionTitle')}
           selected={selected === 'solution'}
           onPress={() => onSelect('solution')}
+          style={styles.lineChip}
         />
       ) : null}
       {hasPunishment ? (
@@ -548,13 +529,13 @@ function LineFilter({
           label={t('review.punishmentTitle')}
           selected={selected === 'punishment'}
           onPress={() => onSelect('punishment')}
+          style={styles.lineChip}
         />
       ) : null}
     </View>
   );
 }
 
-/** Flèches de défilement de la variante affichée, coup par coup. */
 function ReplayControls({ replay }: { replay: LineReplay }) {
   if (replay.total <= 0) return null;
   return (
@@ -623,10 +604,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingTop: Spacing.sm,
   },
-  remaining: {
-    marginTop: Spacing.xs,
-    marginBottom: Spacing.sm,
-  },
   boardWrapper: {
     alignItems: 'center',
   },
@@ -634,6 +611,9 @@ const styles = StyleSheet.create({
     opacity: 0.55,
   },
   turn: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
     marginTop: Spacing.md,
   },
   prompt: {
@@ -680,9 +660,13 @@ const styles = StyleSheet.create({
   },
   lines: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     marginTop: Spacing.sm,
-    rowGap: Spacing.xs,
+    columnGap: Spacing.sm,
+  },
+  lineChip: {
+    flex: 1,
+    marginRight: 0,
   },
   lineActions: {
     flexDirection: 'row',
@@ -693,7 +677,7 @@ const styles = StyleSheet.create({
   replayControls: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     marginTop: Spacing.sm,
     columnGap: Spacing.sm,
   },

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet } from 'react-native';
 
-import { AppText, Panel, Screen, Select } from '@/components/ui';
+import { AppText, Panel, Screen, Select, Toggle } from '@/components/ui';
 import { fetchThemeStats } from '@/features/review/api';
 import { t, translateTheme } from '@/lib/i18n';
 import {
+  AUTO_PLAY_LINE,
   REVIEW_THEME_FILTER,
   SHUFFLE_QUEUE,
   useStoredFlag,
@@ -17,6 +18,7 @@ const ALL_THEMES = '';
 export function SettingsScreen() {
   const [themeFilter, setThemeFilter] = useStoredValue(REVIEW_THEME_FILTER, ALL_THEMES);
   const [shuffle, setShuffle] = useStoredFlag(SHUFFLE_QUEUE, false);
+  const [autoPlayLine, setAutoPlayLine] = useStoredFlag(AUTO_PLAY_LINE, false);
   const [availableThemes, setAvailableThemes] = useState<string[]>([]);
 
   useEffect(() => {
@@ -57,6 +59,11 @@ export function SettingsScreen() {
           value={shuffle ? 'random' : 'game'}
           options={orderOptions}
           onChange={(value) => setShuffle(value === 'random')}
+        />
+        <Toggle
+          label={t('review.autoPlayLine')}
+          value={autoPlayLine}
+          onValueChange={setAutoPlayLine}
         />
       </Panel>
     </Screen>

@@ -1,13 +1,23 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, EmptyState, Loader, Panel, Screen } from '@/components/ui';
-import { fetchGlobalStats, fetchThemeStats } from '@/features/review/api';
+import { fetchDueForecast, fetchGlobalStats, fetchThemeStats } from '@/features/review/api';
 import { useAuth } from '@/lib/auth';
 import { t, translateTheme } from '@/lib/i18n';
-import type { GlobalStats, ThemeStat } from '@/lib/types';
+import type { DueForecast, GlobalStats, ThemeStat } from '@/lib/types';
 import { Colors, Radius, Spacing } from '@/theme/atelier';
+
+/** Dimanche en premier, comme le renvoie `Date#getDay`. */
+const WEEKDAY_LABELS = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
+
+/** Libellé court d'un jour, ex. « Auj. », « Dem. », « Lun. ». */
+function dayLabel(date: string, offset: number): string {
+  if (offset === 0) return t('stats.today');
+  if (offset === 1) return t('stats.tomorrow');
+  return WEEKDAY_LABELS[new Date(`${date}T00:00:00`).getDay()];
+}
 
 /** Taux de réussite, ou `null` si la carte n'a jamais été tentée. */
 function accuracy(correct: number, incorrect: number): number | null {
@@ -27,6 +37,7 @@ export function StatsScreen() {
   const { signOut } = useAuth();
   const [global, setGlobal] = useState<GlobalStats | null>(null);
   const [themes, setThemes] = useState<ThemeStat[]>([]);
+  const [forecast, setForecast] = useState<DueForecast | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
   const [showAllThemes, setShowAllThemes] = useState(false);
@@ -34,12 +45,14 @@ export function StatsScreen() {
   const load = useCallback(async () => {
     setStatus('loading');
     try {
-      const [globalStats, themeStats] = await Promise.all([
+      const [globalStats, themeStats, dueForecast] = await Promise.all([
         fetchGlobalStats(),
         fetchThemeStats(),
+        fetchDueForecast(),
       ]);
       setGlobal(globalStats);
       setThemes(themeStats);
+      setForecast(dueForecast);
       setStatus('ready');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -76,7 +89,7 @@ export function StatsScreen() {
     );
   }
 
-  if (!global || global.cards === 0) {
+  if (!global || !forecast || global.cards === 0) {
     return (
       <Screen>
         <EmptyState
@@ -113,6 +126,13 @@ export function StatsScreen() {
     : attempted.slice(0, THEME_PREVIEW_COUNT);
   const hiddenCount = attempted.length - visibleAttempted.length;
 
+  const forecastMax = Math.max(
+    1,
+    forecast.overdue,
+    forecast.later,
+    ...forecast.days.map((day) => day.count)
+  );
+
   return (
     <Screen scroll>
       <AppText variant="title" style={styles.title}>
@@ -145,18 +165,38 @@ export function StatsScreen() {
       </Panel>
 
       <Panel style={styles.panel}>
-        <AppText variant="heading">{t('stats.byCategory')}</AppText>
-        <View style={styles.metrics}>
-          <Metric
-            label={t('category.inaccuracy')}
-            value={String(global.inaccuracies)}
-          />
-          <Metric
-            label={t('category.mistake')}
-            value={String(global.mistakes_count)}
-          />
-          <Metric label={t('category.blunder')} value={String(global.blunders)} />
-        </View>
+        <AppText variant="heading">{t('stats.calendarTitle')}</AppText>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.calendar}>
+          {forecast.overdue > 0 ? (
+            <CalendarDay
+              label={t('stats.overdue')}
+              count={forecast.overdue}
+              maxCount={forecastMax}
+              overdue
+            />
+          ) : null}
+          {forecast.days.map((day, offset) => (
+            <CalendarDay
+              key={day.date}
+              label={dayLabel(day.date, offset)}
+              count={day.count}
+              maxCount={forecastMax}
+            />
+          ))}
+          {forecast.later > 0 ? (
+            <CalendarDay
+              label={t('stats.later')}
+              count={forecast.later}
+              maxCount={forecastMax}
+            />
+          ) : null}
+        </ScrollView>
+        <Button
+          label={t('stats.viewCategories')}
+          variant="secondary"
+          onPress={() => router.push('/categories')}
+          style={styles.viewCategories}
+        />
       </Panel>
 
       <AppText variant="heading" style={styles.sectionTitle}>
@@ -215,6 +255,46 @@ export function StatsScreen() {
         style={styles.signOut}
       />
     </Screen>
+  );
+}
+
+/** Hauteur max de la barre, hors libellé et compte. */
+const CALENDAR_BAR_HEIGHT = 56;
+
+function CalendarDay({
+  label,
+  count,
+  maxCount,
+  overdue = false,
+}: {
+  label: string;
+  count: number;
+  maxCount: number;
+  overdue?: boolean;
+}) {
+  const height = Math.max(2, (count / maxCount) * CALENDAR_BAR_HEIGHT);
+  return (
+    <View style={styles.calendarDay}>
+      <View style={styles.calendarTrack}>
+        {count > 0 ? (
+          <AppText muted variant="label">
+            {count}
+          </AppText>
+        ) : null}
+        <View
+          style={[
+            styles.calendarBar,
+            {
+              height,
+              backgroundColor: overdue ? Colors.danger : Colors.accent,
+            },
+          ]}
+        />
+      </View>
+      <AppText muted variant="label" style={styles.calendarLabel}>
+        {label}
+      </AppText>
+    </View>
   );
 }
 
@@ -287,6 +367,33 @@ const styles = StyleSheet.create({
   },
   panel: {
     marginTop: Spacing.md,
+  },
+  viewCategories: {
+    alignSelf: 'flex-start',
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+  },
+  calendar: {
+    marginTop: Spacing.sm,
+  },
+  calendarDay: {
+    alignItems: 'center',
+    width: 44,
+    marginRight: Spacing.sm,
+  },
+  calendarTrack: {
+    height: CALENDAR_BAR_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: Spacing.xs,
+  },
+  calendarBar: {
+    width: 20,
+    borderRadius: Radius.sm,
+  },
+  calendarLabel: {
+    marginTop: Spacing.xs,
   },
   metrics: {
     flexDirection: 'row',

@@ -150,10 +150,12 @@ export function Chip({
   label,
   selected = false,
   onPress,
+  style,
 }: {
   label: string;
   selected?: boolean;
   onPress?: () => void;
+  style?: StyleProp<ViewStyle>;
 }) {
   return (
     <Pressable
@@ -164,6 +166,7 @@ export function Chip({
         styles.chip,
         selected && styles.chipSelected,
         pressed && styles.buttonDimmed,
+        style,
       ]}>
       <Text
         style={[
@@ -334,6 +337,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     backgroundColor: Colors.surface,
     marginRight: Spacing.sm,
+    alignItems: 'center',
   },
   chipSelected: {
     backgroundColor: Colors.accent,

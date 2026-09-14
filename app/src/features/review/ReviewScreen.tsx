@@ -77,11 +77,15 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
   // s'ouvre qu'à la demande, pour ne pas noyer le verdict sous les contrôles.
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [elapsed, setElapsed] = useState(0);
   // Après une erreur, la variante attend le joueur ; ce réglage la déroule
   // tout de suite pour qui préfère voir la suite sans rien demander.
   const [autoPlayLine, setAutoPlayLine] = useStoredFlag(AUTO_PLAY_LINE, false);
-  const startedAt = useRef(Date.now());
+  // État (pas une ref) : `ElapsedLabel` en a besoin comme prop stable pour
+  // faire tourner son propre chrono sans rerendre tout l'écran chaque
+  // seconde — l'échiquier SVG est trop coûteux pour ça.
+  const [startedAt, setStartedAt] = useState(Date.now());
+  /** Durée figée à afficher une fois la réponse donnée. */
+  const finalSecondsRef = useRef(0);
   /** Rejoue le dernier enregistrement raté ; posé à chaque tentative. */
   const retrySaveRef = useRef<(() => void) | null>(null);
 
@@ -94,25 +98,14 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
     setReplaySource('punishment');
     setDetailsOpen(false);
     setSaveError(null);
-    setElapsed(0);
   }, [current?.id]);
 
   // Le chrono part quand la position à résoudre est posée, pas pendant que le
   // dernier coup adverse se joue : cette seconde-là n'est pas de la réflexion.
   useEffect(() => {
     if (!run.ready) return;
-    setElapsed(0);
-    startedAt.current = Date.now();
+    setStartedAt(Date.now());
   }, [run.ready, current?.id]);
-
-  useEffect(() => {
-    if (phase !== 'solving' || !current || !run.ready) return;
-    const timer = setInterval(
-      () => setElapsed(Math.floor((Date.now() - startedAt.current) / 1000)),
-      1000
-    );
-    return () => clearInterval(timer);
-  }, [phase, current, run.ready]);
 
   const replayLine = useMemo(() => {
     if (!current) return { fen: START_FEN, moves: [] as LineMove[], step: 0 };
@@ -156,7 +149,7 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
       if (verdict === 'progress') return;
 
       const correct = verdict === 'solved';
-      const seconds = (Date.now() - startedAt.current) / 1000;
+      const seconds = (Date.now() - startedAt) / 1000;
       const outcome = reviewMistake(current, correct, seconds);
 
       setAttempt({
@@ -187,7 +180,7 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
               ? 'solution'
               : 'attempt';
       setReplaySource(source);
-      setElapsed(Math.floor(seconds));
+      finalSecondsRef.current = Math.floor(seconds);
       setPhase(correct ? 'correct' : 'wrong');
 
       const persist = () => {
@@ -199,11 +192,24 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
       retrySaveRef.current = persist;
       persist();
     },
-    [current, phase, run]
+    // `run.play`/`run.fen`/`run.moveNumber` plutôt que `run` : l'objet que
+    // rend `usePuzzleRun` est reconstruit à chaque rendu, ce qui donnerait à
+    // `handleMove` une nouvelle référence à chaque fois et défairait la
+    // mémoïsation de `Chessboard` pour rien.
+    [current, phase, run.play, run.fen, run.moveNumber, startedAt]
   );
 
   const { width } = useWindowDimensions();
   const boardSize = Math.min(width - Spacing.md * 2, MAX_BOARD_SIZE);
+
+  // Le dernier coup adverse situe la position : sans lui, on cherche ce qui
+  // vient de changer avant de chercher le bon coup. Mémoïsé pour garder
+  // `lastMove` référentiellement stable — sinon `Chessboard` (mémoïsé)
+  // rerendrait à chaque frappe du chrono ou changement d'état sans rapport.
+  const previousSquares = useMemo(
+    () => uciSquares(current?.previous_move?.uci),
+    [current?.previous_move?.uci]
+  );
 
   if (queue.status === 'loading' && !current) {
     return (
@@ -238,9 +244,6 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
   }
 
   const solverColor = current.fen.split(' ')[1] === 'w' ? 'w' : 'b';
-  // Le dernier coup adverse situe la position : sans lui, on cherche ce qui
-  // vient de changer avant de chercher le bon coup.
-  const previousSquares = uciSquares(current.previous_move?.uci);
   const board =
     phase === 'wrong'
       ? {
@@ -254,7 +257,11 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
     <Screen scroll>
       <View style={styles.header}>
         <AppText variant="title">{t('review.title')}</AppText>
-        <AppText muted>{t('review.elapsed', { seconds: elapsed })}</AppText>
+        <ElapsedLabel
+          active={phase === 'solving' && run.ready}
+          startedAt={startedAt}
+          frozenSeconds={finalSecondsRef.current}
+        />
       </View>
 
       <AppText muted style={styles.remaining}>
@@ -333,6 +340,38 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
         </View>
       ) : null}
     </Screen>
+  );
+}
+
+/**
+ * Chrono affiché seul : le compte à la seconde tourne dans son propre état,
+ * pour ne pas rerendre tout l'écran (échiquier SVG compris) chaque seconde.
+ */
+function ElapsedLabel({
+  active,
+  startedAt,
+  frozenSeconds,
+}: {
+  active: boolean;
+  startedAt: number;
+  frozenSeconds: number;
+}) {
+  const [seconds, setSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!active) return;
+    setSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    const timer = setInterval(
+      () => setSeconds(Math.floor((Date.now() - startedAt) / 1000)),
+      1000
+    );
+    return () => clearInterval(timer);
+  }, [active, startedAt]);
+
+  return (
+    <AppText muted>
+      {t('review.elapsed', { seconds: active ? seconds : frozenSeconds })}
+    </AppText>
   );
 }
 

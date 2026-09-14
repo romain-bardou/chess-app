@@ -125,5 +125,21 @@ export function pieceTravels(beforeFen: string, afterFen: string): PieceTravel[]
     });
   }
 
+  // Deux pièces à la fois ne peut être qu'un roque : sinon c'est le signe
+  // que `beforeFen`/`afterFen` ne sont pas deux positions consécutives (une
+  // image intermédiaire jamais peinte, un coup manqué) — le diff a recollé
+  // deux coups réels en un trajet inventé. Mieux vaut basculer sans
+  // animation qu'en montrer une fausse.
+  if (travels.length === 2 && !isCastle(travels)) return [];
+
   return travels;
+}
+
+function isCastle(travels: PieceTravel[]): boolean {
+  const king = travels.find((travel) => travel.type === 'k');
+  const rook = travels.find((travel) => travel.type === 'r');
+  if (!king || !rook || king === rook || king.color !== rook.color) return false;
+  if (king.from[1] !== king.to[1]) return false;
+  const fileDelta = Math.abs(FILES.indexOf(king.to[0]) - FILES.indexOf(king.from[0]));
+  return fileDelta === 2;
 }

@@ -60,4 +60,13 @@ describe('pieceTravels', () => {
     expect(pieceTravels('n importe quoi', START)).toEqual([]);
     expect(pieceTravels(START, '')).toEqual([]);
   });
+
+  it('renonce sur un faux trajet à deux pièces qui n est pas un roque', () => {
+    // Deux coups réels recollés en un seul diff (image intermédiaire jamais
+    // peinte) : le cavalier a bien bougé, mais le pion « reculé » de c4 à c2
+    // trahit que ces deux FEN ne sont pas deux positions consécutives.
+    const before = '4k3/8/8/6n1/2P5/8/8/4K3 w - - 0 1';
+    const afterFen = '4k3/5n2/8/8/8/8/2P5/4K3 w - - 0 1';
+    expect(pieceTravels(before, afterFen)).toEqual([]);
+  });
 });

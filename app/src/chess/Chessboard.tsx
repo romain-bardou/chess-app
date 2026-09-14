@@ -9,6 +9,7 @@
  */
 import { Chess, type Color, type PieceSymbol, type Square } from 'chess.js';
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -92,7 +93,12 @@ function gradientEnds(angleDegrees: number) {
 
 const ENDS = gradientEnds(Board.gradientAngle);
 
-export function Chessboard({
+/**
+ * Mémoïsé : l'écran de révision rerend chaque seconde (chrono) et à chaque
+ * interaction hors échiquier (filtre, toggle) — sans ça, tout l'arbre SVG
+ * (64 cases, dégradés, gestes) se reconstruirait pour rien à chaque fois.
+ */
+export const Chessboard = memo(function Chessboard({
   fen,
   orientation,
   size,
@@ -129,17 +135,26 @@ export function Chessboard({
   const travelProgress = useSharedValue(1);
   const renderedFen = useRef(fen);
 
-  useEffect(() => {
+  // Calculé pendant le rendu (motif React « ajuster l'état pendant le
+  // rendu »), pas dans un effet : un effet tourne une frame après la
+  // position déjà affichée avec la nouvelle FEN, donc la pièce arrivée se
+  // montrerait d'abord au grand jour avant que l'effet la masque pour la
+  // couche animée — un flash suivi d'une disparition/réapparition à chaque
+  // coup. Calculer ici applique le masquage dès la première peinture de
+  // cette position.
+  if (fen !== renderedFen.current) {
     const before = renderedFen.current;
     renderedFen.current = fen;
-    if (before === fen) return;
-
     // Liste vide : ce n'est pas un coup (nouvelle carte, retour en arrière).
     // On bascule sans transition plutôt que d'inventer un déplacement.
-    const moved = pieceTravels(before, fen);
-    setTravels(moved);
-    if (moved.length === 0) return;
+    setTravels(pieceTravels(before, fen));
+  }
 
+  // L'animation elle-même (son, trajet UI-thread) reste dans un effet : ce
+  // sont de vrais effets de bord, sans rapport avec ce qui doit être masqué
+  // à l'écran dès ce rendu.
+  useEffect(() => {
+    if (travels.length === 0) return;
     playMoveSound();
     travelProgress.value = 0;
     travelProgress.value = withTiming(
@@ -149,7 +164,7 @@ export function Chessboard({
         if (finished) runOnJS(setTravels)([]);
       }
     );
-  }, [fen, travelProgress]);
+  }, [travels, travelProgress]);
 
   const flying = useMemo(
     () => new Set(travels.map((travel) => travel.to)),
@@ -447,7 +462,12 @@ export function Chessboard({
                 />
               );
             })}
+          </Svg>
 
+          {/* Calque à part, en `Image` RN plutôt que dans le `Svg` : voir
+              Pieces.tsx — le rendu SVG redécodait le bitmap à chaque
+              montage. */}
+          <View style={styles.pieceLayer} pointerEvents="none">
             {game
               .board()
               .flat()
@@ -470,7 +490,14 @@ export function Chessboard({
                   />
                 );
               })}
+          </View>
 
+          {/* Repères a-h/1-8 par-dessus les pièces, comme avant ce calque. */}
+          <Svg
+            width={size}
+            height={size}
+            style={styles.pieceLayer}
+            pointerEvents="none">
             <Coordinates orientation={orientation} squareSize={squareSize} />
           </Svg>
         </View>
@@ -487,16 +514,20 @@ export function Chessboard({
       ))}
 
       {draggedPiece ? (
-        <Animated.View pointerEvents="none" style={[styles.dragLayer, dragStyle]}>
-          <Svg width={squareSize} height={squareSize}>
-            <Piece
-              type={draggedPiece.type}
-              color={draggedPiece.color}
-              size={squareSize}
-              x={0}
-              y={0}
-            />
-          </Svg>
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.dragLayer,
+            { width: squareSize, height: squareSize },
+            dragStyle,
+          ]}>
+          <Piece
+            type={draggedPiece.type}
+            color={draggedPiece.color}
+            size={squareSize}
+            x={0}
+            y={0}
+          />
         </Animated.View>
       ) : null}
 
@@ -511,7 +542,7 @@ export function Chessboard({
       ) : null}
     </View>
   );
-}
+});
 
 /**
  * Pièce en cours de déplacement, dessinée au-dessus de l'échiquier.
@@ -541,16 +572,10 @@ function TravelingPiece({
   }));
 
   return (
-    <Animated.View pointerEvents="none" style={[styles.dragLayer, style]}>
-      <Svg width={squareSize} height={squareSize}>
-        <Piece
-          type={travel.type}
-          color={travel.color}
-          size={squareSize}
-          x={0}
-          y={0}
-        />
-      </Svg>
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.dragLayer, { width: squareSize, height: squareSize }, style]}>
+      <Piece type={travel.type} color={travel.color} size={squareSize} x={0} y={0} />
     </Animated.View>
   );
 }
@@ -621,11 +646,10 @@ function PromotionPicker({
         {PROMOTION_CHOICES.map((piece) => (
           <View
             key={piece}
+            style={{ width: squareSize, height: squareSize }}
             onStartShouldSetResponder={() => true}
             onResponderRelease={() => onPick(piece)}>
-            <Svg width={squareSize} height={squareSize}>
-              <Piece type={piece} color={color} size={squareSize} x={0} y={0} />
-            </Svg>
+            <Piece type={piece} color={color} size={squareSize} x={0} y={0} />
           </View>
         ))}
       </View>
@@ -638,10 +662,16 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     overflow: 'hidden',
   },
+  pieceLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
   dragLayer: {
     position: 'absolute',
     left: 0,
     top: 0,
+    // Android masque par défaut ce qui dépasse d'une View sans taille
+    // propre ; explicite ici pour ne pas dépendre de ce défaut.
+    overflow: 'visible',
   },
   promotionOverlay: {
     position: 'absolute',

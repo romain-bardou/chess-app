@@ -46,11 +46,27 @@ what's due.
   a chess.com API outage does not block the analysis step (`continue-on-error`
   on import).
 - App: Expo/React Native (`app/`), single authenticated owner account.
+- Navigation: two tabs, Accueil (`src/features/home`) and Statistiques.
+  Accueil is a chooser for the mode to train — today it links only to
+  Puzzles (`/puzzles`, a stacked route outside the tab bar); an Ouvertures
+  entry will join it once the phase 2 repertoire generator exists (see
+  `repertoire_nodes` below). Accueil also links to Réglages (`/settings`, also
+  stacked, `src/features/settings`).
 - Review flow (`src/features/review`): FSRS-scheduled puzzle queue, custom
-  SVG chessboard (`src/chess/Chessboard.tsx`) for attempting/exploring moves,
-  order-of-review chosen by the user (by game or random).
+  SVG chessboard (`src/chess/Chessboard.tsx`) for attempting/exploring moves.
+  Theme filter and review order (by game or random) are no longer in-screen
+  controls — they moved to Réglages as persisted defaults
+  (`src/lib/settings.ts`); a theme picked from Stats ("train this theme")
+  still overrides the default for that session via the `/puzzles?theme=`
+  param.
 - Stats flow (`src/features/stats`): performance broken down by tactical
   theme.
+- Opening repertoire (planned, phase 2): `repertoire_nodes` table exists in
+  the schema (FSRS columns, tree via `parent_node_id`) but has 0 rows — no
+  generator populates it yet (would pull from the Lichess Opening Explorer:
+  Scotch/Écossaise as White, Caro-Kann as Black) and no app-side review flow
+  exists for it. Currently only wired into `analysis/main.py`'s book-move
+  exception (queried by `fen` + `move_san`, not surfaced in the app).
 
 ## Capabilities and Constraints
 

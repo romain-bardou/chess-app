@@ -1,11 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { Chessboard, type BoardMove } from '@/chess/Chessboard';
@@ -20,14 +14,20 @@ import {
   Screen,
   Toggle,
 } from '@/components/ui';
-import { fetchThemeStats, saveReview } from '@/features/review/api';
+import { saveReview } from '@/features/review/api';
 import { bestMoveSan } from '@/features/review/grading';
 import { useLineReplay, type LineReplay } from '@/features/review/useLineReplay';
 import { usePuzzleRun } from '@/features/review/usePuzzleRun';
 import { useReviewQueue } from '@/features/review/useReviewQueue';
 import { GRADE_LABELS, reviewMistake } from '@/lib/fsrs';
 import { t, translateTheme, type TranslationKey } from '@/lib/i18n';
-import { AUTO_PLAY_LINE, SHUFFLE_QUEUE, useStoredFlag } from '@/lib/settings';
+import {
+  AUTO_PLAY_LINE,
+  REVIEW_THEME_FILTER,
+  SHUFFLE_QUEUE,
+  useStoredFlag,
+  useStoredValue,
+} from '@/lib/settings';
 import type { LineMove, Mistake, SolutionGain } from '@/lib/types';
 import { Colors, Radius, Spacing } from '@/theme/atelier';
 
@@ -60,11 +60,13 @@ function gainLabel(gain: SolutionGain | null): string | null {
 }
 
 export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | null }) {
-  const [theme, setTheme] = useState<string | null>(initialTheme);
-  const [availableThemes, setAvailableThemes] = useState<string[]>([]);
+  // Un thème choisi depuis les Stats (initialTheme) prime sur le réglage par
+  // défaut ; sinon la file suit le filtre posé dans Réglages.
+  const [defaultThemeFilter] = useStoredValue(REVIEW_THEME_FILTER, '');
+  const theme = initialTheme ?? (defaultThemeFilter || null);
   // Les cartes neuves arrivent groupées par partie, dans l'ordre des coups :
   // pratique pour revoir une partie, trop indicatif pour tester la mémoire.
-  const [shuffle, setShuffle] = useStoredFlag(SHUFFLE_QUEUE, false);
+  const [shuffle] = useStoredFlag(SHUFFLE_QUEUE, false);
   const queue = useReviewQueue(theme, shuffle);
   const current = queue.current;
 
@@ -82,21 +84,6 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
   const startedAt = useRef(Date.now());
   /** Rejoue le dernier enregistrement raté ; posé à chaque tentative. */
   const retrySaveRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => {
-    setTheme(initialTheme);
-  }, [initialTheme]);
-
-  useEffect(() => {
-    fetchThemeStats()
-      .then((rows) =>
-        setAvailableThemes(
-          rows.filter((row) => row.due > 0).map((row) => row.theme)
-        )
-      )
-      // Le filtre est un confort : son échec ne doit pas bloquer la révision.
-      .catch(() => setAvailableThemes([]));
-  }, []);
 
   // Le chrono démarre à l'affichage de la position, pas au premier contact.
   const run = usePuzzleRun(current);
@@ -241,11 +228,6 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
   if (!current) {
     return (
       <Screen>
-        <ThemeFilter
-          themes={availableThemes}
-          selected={theme}
-          onSelect={setTheme}
-        />
         <EmptyState
           title={t('review.emptyTitle')}
           body={theme ? t('review.emptyThemeBody') : t('review.emptyBody')}
@@ -274,10 +256,6 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
         <AppText variant="title">{t('review.title')}</AppText>
         <AppText muted>{t('review.elapsed', { seconds: elapsed })}</AppText>
       </View>
-
-      <ThemeFilter themes={availableThemes} selected={theme} onSelect={setTheme} />
-
-      <OrderFilter shuffle={shuffle} onSelect={setShuffle} />
 
       <AppText muted style={styles.remaining}>
         {t('review.remaining', { count: queue.remaining })}
@@ -355,63 +333,6 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
         </View>
       ) : null}
     </Screen>
-  );
-}
-
-function ThemeFilter({
-  themes,
-  selected,
-  onSelect,
-}: {
-  themes: string[];
-  selected: string | null;
-  onSelect: (theme: string | null) => void;
-}) {
-  if (themes.length === 0) return null;
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={styles.filter}
-      contentContainerStyle={styles.filterContent}>
-      <Chip
-        label={t('common.all')}
-        selected={selected === null}
-        onPress={() => onSelect(null)}
-      />
-      {themes.map((theme) => (
-        <Chip
-          key={theme}
-          label={translateTheme(theme)}
-          selected={selected === theme}
-          onPress={() => onSelect(theme)}
-        />
-      ))}
-    </ScrollView>
-  );
-}
-
-/** Ordre de la file : les cartes d'une partie à la suite, ou battues. */
-function OrderFilter({
-  shuffle,
-  onSelect,
-}: {
-  shuffle: boolean;
-  onSelect: (shuffle: boolean) => void;
-}) {
-  return (
-    <View style={styles.order}>
-      <Chip
-        label={t('review.orderByGame')}
-        selected={!shuffle}
-        onPress={() => onSelect(false)}
-      />
-      <Chip
-        label={t('review.orderRandom')}
-        selected={shuffle}
-        onPress={() => onSelect(true)}
-      />
-    </View>
   );
 }
 
@@ -662,17 +583,6 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     justifyContent: 'space-between',
     paddingTop: Spacing.sm,
-  },
-  filter: {
-    marginTop: Spacing.sm,
-    flexGrow: 0,
-  },
-  filterContent: {
-    paddingVertical: Spacing.xs,
-  },
-  order: {
-    flexDirection: 'row',
-    marginTop: Spacing.sm,
   },
   remaining: {
     marginTop: Spacing.xs,

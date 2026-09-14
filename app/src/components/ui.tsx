@@ -1,7 +1,8 @@
 /** Primitives visuelles partagées, alignées sur la charte « Atelier ». */
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { t } from '@/lib/i18n';
 import { Colors, Radius, Spacing, Typography } from '@/theme/atelier';
 
 export function Screen({
@@ -187,6 +189,76 @@ export function Loader({ label }: { label?: string }) {
   );
 }
 
+/** Menu déroulant : ligne libellé/valeur, choix dans une feuille au tap. */
+export function Select<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (value: T) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = options.find((option) => option.value === value)?.label ?? '';
+
+  return (
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${label} : ${current}`}
+        onPress={() => setOpen(true)}
+        style={({ pressed }) => [styles.selectRow, pressed && styles.buttonDimmed]}>
+        <AppText>{label}</AppText>
+        <AppText muted variant="label">
+          {current}
+        </AppText>
+      </Pressable>
+
+      <Modal
+        visible={open}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setOpen(false)}>
+        <Pressable
+          style={styles.selectBackdrop}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.cancel')}
+          onPress={() => setOpen(false)}>
+          <Pressable style={styles.selectSheet} onPress={(event) => event.stopPropagation()}>
+            <AppText variant="heading" style={styles.selectSheetTitle}>
+              {label}
+            </AppText>
+            {options.map((option) => {
+              const selected = option.value === value;
+              return (
+                <Pressable
+                  key={option.value}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  onPress={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                  style={({ pressed }) => [
+                    styles.selectOption,
+                    pressed && styles.buttonDimmed,
+                  ]}>
+                  <AppText color={selected ? Colors.accent : undefined}>
+                    {option.label}
+                  </AppText>
+                </Pressable>
+              );
+            })}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
+  );
+}
+
 export function EmptyState({
   title,
   body,
@@ -277,5 +349,32 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
     marginBottom: Spacing.md,
     textAlign: 'center',
+  },
+  selectRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+  },
+  selectBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(59, 36, 18, 0.55)',
+  },
+  selectSheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Radius.lg,
+    borderTopRightRadius: Radius.lg,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xl,
+  },
+  selectSheetTitle: {
+    marginBottom: Spacing.sm,
+  },
+  selectOption: {
+    paddingVertical: Spacing.sm + 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
   },
 });

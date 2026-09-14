@@ -18,7 +18,7 @@ export default function TabsLayout() {
       }}>
       <Tabs.Screen
         name="index"
-        options={{ title: t('tabs.review'), tabBarIcon: () => null }}
+        options={{ title: t('tabs.home'), tabBarIcon: () => null }}
       />
       <Tabs.Screen
         name="stats"

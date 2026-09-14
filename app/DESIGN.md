@@ -169,6 +169,9 @@ Two radius steps beyond the board's own corner: `Radius.md` (14px) for panels, c
 - **Style:** Ivory Surface background, 1px Soft Tan border, Muted Taupe label (unselected) — reads as a quiet, always-visible filter pill.
 - **Selected:** Walnut Brown fill and border, Cream Ink label — the same accent/text pairing as the primary button, so "selected" and "primary action" feel like the same kind of emphasis.
 
+### Select (dropdown)
+A label/value row (label left, current value in muted Label right) that opens a bottom sheet on tap — never an inline expansion. The sheet is Ivory Surface with only the top corners rounded (22px), rising from the screen edge with a hairline divider between options; the selected option's label switches to Walnut Brown, nothing else marks it. Backdrop is Espresso at 55% opacity, matching the promotion-picker overlay on the board — the one dark scrim in the system, reserved for modal dismissal.
+
 ### Cards / Panels
 - **Corner Style:** 14px radius.
 - **Background:** Ivory Surface against the Warm Parchment page background.

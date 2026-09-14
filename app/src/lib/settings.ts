@@ -15,6 +15,9 @@ export const AUTO_PLAY_LINE = 'autoPlayLine';
 /** Bat le lot de révision au lieu de suivre l'ordre des parties. */
 export const SHUFFLE_QUEUE = 'shuffleQueue';
 
+/** Thème sur lequel filtrer la file de révision par défaut ; vide = tous. */
+export const REVIEW_THEME_FILTER = 'reviewThemeFilter';
+
 /**
  * Booléen persistant.
  *
@@ -43,6 +46,39 @@ export function useStoredFlag(
     (next: boolean) => {
       setValue(next);
       AsyncStorage.setItem(PREFIX + key, String(next)).catch(() => undefined);
+    },
+    [key]
+  );
+
+  return [value, update];
+}
+
+/**
+ * Chaîne persistante. Même contrat que `useStoredFlag` : le repli s'affiche
+ * tout de suite, la valeur stockée arrive au rendu suivant.
+ */
+export function useStoredValue(
+  key: string,
+  fallback: string
+): [string, (value: string) => void] {
+  const [value, setValue] = useState(fallback);
+
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(PREFIX + key)
+      .then((stored) => {
+        if (!cancelled && stored !== null) setValue(stored);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+
+  const update = useCallback(
+    (next: string) => {
+      setValue(next);
+      AsyncStorage.setItem(PREFIX + key, next).catch(() => undefined);
     },
     [key]
   );

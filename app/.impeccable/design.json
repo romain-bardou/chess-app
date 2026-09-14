@@ -195,6 +195,14 @@
       "css": ".ds-panel { background: #FFFBF3; border: 1px solid #E0CFB4; border-radius: 14px; padding: 16px; } .ds-panel-heading { font-size: 19px; font-weight: 700; color: #3B2412; margin: 0 0 8px; } .ds-panel-body { font-size: 16px; font-weight: 400; color: #3B2412; margin: 0; }"
     },
     {
+      "name": "Select",
+      "kind": "input",
+      "refersTo": null,
+      "description": "Label/value row opening a bottom sheet of options — Réglages' theme and order pickers.",
+      "html": "<button class=\"ds-select-row\"><span>Thème</span><span class=\"ds-select-value\">Tous</span></button>",
+      "css": ".ds-select-row { display: flex; width: 100%; justify-content: space-between; align-items: center; background: none; border: none; padding: 8px 0; font-size: 16px; color: #3B2412; } .ds-select-value { font-size: 13px; font-weight: 600; color: #7A6349; }"
+    },
+    {
       "name": "Stat Tile",
       "kind": "custom",
       "refersTo": null,

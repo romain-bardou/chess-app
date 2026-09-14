@@ -168,7 +168,7 @@ export function StatsScreen() {
           key={row.theme}
           row={row}
           onTrain={() =>
-            router.push({ pathname: '/', params: { theme: row.theme } })
+            router.push({ pathname: '/puzzles', params: { theme: row.theme } })
           }
         />
       ))}
@@ -192,7 +192,7 @@ export function StatsScreen() {
               key={row.theme}
               row={row}
               onTrain={() =>
-                router.push({ pathname: '/', params: { theme: row.theme } })
+                router.push({ pathname: '/puzzles', params: { theme: row.theme } })
               }
             />
           ))}

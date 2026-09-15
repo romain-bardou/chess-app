@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { Alert, StyleSheet } from 'react-native';
 
-import { AppText, Panel, Screen, Select, Toggle } from '@/components/ui';
+import { AppText, Button, Panel, Screen, Select, Toggle } from '@/components/ui';
+import { resetRepertoireProgress } from '@/features/repertoire/api';
 import { fetchThemeStats } from '@/features/review/api';
 import { t, translateTheme } from '@/lib/i18n';
 import {
   AUTO_PLAY_LINE,
   REVIEW_THEME_FILTER,
+  SHOW_TREE_ZOOM_CONTROLS,
   SHUFFLE_QUEUE,
   useStoredFlag,
   useStoredValue,
@@ -15,11 +17,19 @@ import { Spacing } from '@/theme/atelier';
 
 const ALL_THEMES = '';
 
+type Side = 'white' | 'black';
+
 export function SettingsScreen() {
   const [themeFilter, setThemeFilter] = useStoredValue(REVIEW_THEME_FILTER, ALL_THEMES);
   const [shuffle, setShuffle] = useStoredFlag(SHUFFLE_QUEUE, false);
   const [autoPlayLine, setAutoPlayLine] = useStoredFlag(AUTO_PLAY_LINE, false);
   const [availableThemes, setAvailableThemes] = useState<string[]>([]);
+  const [resetSide, setResetSide] = useState<Side>('white');
+  const [resetting, setResetting] = useState(false);
+  const [showTreeZoomControls, setShowTreeZoomControls] = useStoredFlag(
+    SHOW_TREE_ZOOM_CONTROLS,
+    true
+  );
 
   useEffect(() => {
     fetchThemeStats()
@@ -39,6 +49,27 @@ export function SettingsScreen() {
     { value: 'game', label: t('review.orderByGame') },
     { value: 'random', label: t('review.orderRandom') },
   ];
+
+  const confirmResetRepertoire = () => {
+    Alert.alert(t('openings.resetConfirmTitle'), t('openings.resetConfirmBody'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('openings.resetTree'),
+        style: 'destructive',
+        onPress: () => {
+          setResetting(true);
+          resetRepertoireProgress(resetSide)
+            .catch((cause: unknown) =>
+              Alert.alert(
+                t('common.error'),
+                cause instanceof Error ? cause.message : String(cause)
+              )
+            )
+            .finally(() => setResetting(false));
+        },
+      },
+    ]);
+  };
 
   return (
     <Screen>
@@ -66,6 +97,31 @@ export function SettingsScreen() {
           onValueChange={setAutoPlayLine}
         />
       </Panel>
+
+      <Panel style={styles.panel}>
+        <AppText variant="heading">{t('settings.repertoireSection')}</AppText>
+        <Select
+          label={t('openings.repertoireLabel')}
+          value={resetSide}
+          options={[
+            { value: 'white', label: t('openings.scotch') },
+            { value: 'black', label: t('openings.caroKann') },
+          ]}
+          onChange={setResetSide}
+        />
+        <Toggle
+          label={t('settings.showTreeZoomControls')}
+          value={showTreeZoomControls}
+          onValueChange={setShowTreeZoomControls}
+        />
+        <Button
+          label={resetting ? t('openings.resetting') : t('openings.resetTree')}
+          variant="secondary"
+          disabled={resetting}
+          onPress={confirmResetRepertoire}
+          style={styles.resetButton}
+        />
+      </Panel>
     </Screen>
   );
 }
@@ -74,5 +130,12 @@ const styles = StyleSheet.create({
   title: {
     paddingTop: Spacing.sm,
     marginBottom: Spacing.md,
+  },
+  panel: {
+    marginTop: Spacing.md,
+  },
+  resetButton: {
+    alignSelf: 'flex-start',
+    marginTop: Spacing.sm,
   },
 });

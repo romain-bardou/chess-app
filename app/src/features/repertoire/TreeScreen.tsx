@@ -1,14 +1,15 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { AppText, EmptyState, Loader, Screen, Select } from '@/components/ui';
 import { fetchRepertoireTree } from '@/features/repertoire/api';
 import { TreeDiagram, TreeLegend } from '@/features/repertoire/TreeDiagram';
+import { computeEffectiveStatuses } from '@/features/repertoire/tree';
 import { t } from '@/lib/i18n';
 import type { RepertoireNode } from '@/lib/types';
-import { Spacing } from '@/theme/atelier';
+import { Colors, Radius, Spacing } from '@/theme/atelier';
 
 type Side = 'white' | 'black';
 
@@ -18,6 +19,11 @@ export function TreeScreen() {
   const [nodes, setNodes] = useState<RepertoireNode[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
+
+  // Paysage : la largeur gagnée sert au diagramme, pas au bandeau du haut —
+  // titre et légende passent en formats compacts pour lui laisser la place.
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
 
   const load = useCallback((next: Side) => {
     setStatus('loading');
@@ -33,12 +39,23 @@ export function TreeScreen() {
       });
   }, []);
 
-  // Un seul chargement au montage ; changer de camp recharge explicitement
+  // Un seul chargement au montage ; changer d'ouverture recharge explicitement
   // via le Select, pas besoin d'un rechargement au retour sur l'écran comme
   // les stats (l'arbre ne change pas pendant une session de révision).
   useEffect(() => {
     load(side);
   }, []);
+
+  // Une variante = une fin de ligne (`is_book_end`) ; "complétée" reprend
+  // exactement le critère du ✓ affiché dans l'arbre (voir TreeDiagram).
+  const { completed, total } = useMemo(() => {
+    const statuses = computeEffectiveStatuses(nodes);
+    const bookEnds = nodes.filter((node) => node.is_book_end);
+    const done = bookEnds.filter(
+      (node) => statuses.get(node.id) === 'learned' && node.clean
+    ).length;
+    return { completed: done, total: bookEnds.length };
+  }, [nodes]);
 
   // L'arbre profite du paysage (plus large que haut) ; déverrouille tant que
   // l'écran a le focus, reverrouille portrait dès qu'on le quitte.
@@ -53,22 +70,32 @@ export function TreeScreen() {
 
   return (
     <Screen>
-      <AppText variant="title" style={styles.title}>
-        {t('openings.treeTitle')}
-      </AppText>
-
-      <Select
-        label={t('openings.colorLabel')}
-        value={side}
-        options={[
-          { value: 'white', label: t('openings.chooseWhite') },
-          { value: 'black', label: t('openings.chooseBlack') },
-        ]}
-        onChange={(next) => {
-          setSide(next);
-          load(next);
-        }}
-      />
+      <View style={[styles.header, isLandscape && styles.headerCompact]}>
+        <View style={styles.headerRow}>
+          <AppText style={[styles.title, isLandscape && styles.titleCompact]}>
+            {t('openings.treeTitle')}
+          </AppText>
+          <Select
+            label={t('openings.repertoireLabel')}
+            value={side}
+            hideLabel
+            options={[
+              { value: 'white', label: t('openings.scotch') },
+              { value: 'black', label: t('openings.caroKann') },
+            ]}
+            onChange={(next) => {
+              setSide(next);
+              load(next);
+            }}
+            style={[styles.headerButton, isLandscape && styles.headerButtonCompact]}
+          />
+        </View>
+        {status === 'ready' && total > 0 ? (
+          <AppText muted style={styles.progress}>
+            {t('openings.treeProgress', { done: completed, total })}
+          </AppText>
+        ) : null}
+      </View>
 
       {status === 'loading' ? (
         <Loader label={t('common.loading')} />
@@ -78,9 +105,6 @@ export function TreeScreen() {
         <EmptyState title={t('openings.treeTitle')} body={t('openings.emptyBody')} />
       ) : (
         <View style={styles.diagramArea}>
-          <AppText muted variant="label" style={styles.count}>
-            {t('openings.treeCount', { count: nodes.length })}
-          </AppText>
           <TreeLegend />
           <TreeDiagram
             nodes={nodes}
@@ -95,15 +119,43 @@ export function TreeScreen() {
 }
 
 const styles = StyleSheet.create({
+  header: {
+    paddingTop: Spacing.xs,
+    marginBottom: Spacing.sm,
+    rowGap: 2,
+  },
+  // Paysage = écran court : les deux lignes restent, juste plus petites.
+  headerCompact: {
+    paddingTop: 2,
+    marginBottom: 2,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   title: {
-    paddingTop: Spacing.sm,
-    marginBottom: Spacing.md,
+    fontSize: 21,
+    fontWeight: '700',
+  },
+  titleCompact: {
+    fontSize: 15,
+  },
+  progress: {
+    fontSize: 11,
+  },
+  headerButton: {
+    borderWidth: 1,
+    borderColor: Colors.accent,
+    borderRadius: Radius.lg,
+    paddingVertical: 3,
+    paddingHorizontal: Spacing.sm,
+  },
+  headerButtonCompact: {
+    paddingVertical: 1,
+    paddingHorizontal: Spacing.sm,
   },
   diagramArea: {
     flex: 1,
-    marginTop: Spacing.md,
-  },
-  count: {
-    marginBottom: Spacing.sm,
   },
 });

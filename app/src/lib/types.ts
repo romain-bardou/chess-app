@@ -139,5 +139,8 @@ export interface RepertoireNode {
   /** Contrairement à `mistakes`, pas de défaut en base : nul avant la première révision. */
   fsrs_due_at: string | null;
   fsrs_card: StoredFsrsCard | null;
+  /** Vrai seulement si la dernière fois que cette fin de variante a été
+   * atteinte, ce fut d'une traite, sans erreur ni Recommencer. */
+  clean: boolean;
   created_at: string;
 }

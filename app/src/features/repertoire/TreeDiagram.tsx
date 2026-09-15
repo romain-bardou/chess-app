@@ -22,6 +22,7 @@ import {
 } from '@/features/repertoire/layout';
 import { computeEffectiveStatuses, type FsrsStatus } from '@/features/repertoire/tree';
 import { t } from '@/lib/i18n';
+import { SHOW_TREE_ZOOM_CONTROLS, useStoredFlag } from '@/lib/settings';
 import type { RepertoireNode } from '@/lib/types';
 import { Colors, Radius, Spacing } from '@/theme/atelier';
 
@@ -104,6 +105,7 @@ export function TreeDiagram({
 }) {
   const layout = useMemo(() => computeTreeLayout(nodes), [nodes]);
   const statuses = useMemo(() => computeEffectiveStatuses(nodes), [nodes]);
+  const [showZoomControls] = useStoredFlag(SHOW_TREE_ZOOM_CONTROLS, true);
   const scale = useSharedValue(1);
   const gestureStartScale = useSharedValue(1);
 
@@ -140,27 +142,29 @@ export function TreeDiagram({
 
   return (
     <View style={styles.container}>
-      <View style={styles.zoomBar}>
-        <Button
-          label="－"
-          variant="secondary"
-          onPress={zoomOut}
-          disabled={displayScale <= MIN_SCALE}
-          accessibilityLabel={t('openings.zoomOut')}
-          style={styles.zoomButton}
-        />
-        <AppText muted variant="label" style={styles.zoomValue}>
-          {Math.round(displayScale * 100)}%
-        </AppText>
-        <Button
-          label="＋"
-          variant="secondary"
-          onPress={zoomIn}
-          disabled={displayScale >= MAX_SCALE}
-          accessibilityLabel={t('openings.zoomIn')}
-          style={styles.zoomButton}
-        />
-      </View>
+      {showZoomControls ? (
+        <View style={styles.zoomBar}>
+          <Button
+            label="－"
+            variant="secondary"
+            onPress={zoomOut}
+            disabled={displayScale <= MIN_SCALE}
+            accessibilityLabel={t('openings.zoomOut')}
+            style={styles.zoomButton}
+          />
+          <AppText muted variant="label" style={styles.zoomValue}>
+            {Math.round(displayScale * 100)}%
+          </AppText>
+          <Button
+            label="＋"
+            variant="secondary"
+            onPress={zoomIn}
+            disabled={displayScale >= MAX_SCALE}
+            accessibilityLabel={t('openings.zoomIn')}
+            style={styles.zoomButton}
+          />
+        </View>
+      ) : null}
 
       {/* Le zoom ne dépasse jamais 1 (voir MAX_SCALE) : le contenu réduit par
           le transform reste toujours dans les bornes de sa taille native,
@@ -216,7 +220,10 @@ function TreeNodeShape({
   const pct = node.popularity === null ? null : `${Math.round(node.popularity * 100)}%`;
   // Carte = un coup à nous : seuls ceux-là ont une échéance FSRS à rejouer.
   const isCard = node.popularity === null;
-  const mastered = node.is_book_end && status === 'learned';
+  // "Maîtrisée" exige les deux : l'échéance FSRS est loin (status) ET la
+  // dernière atteinte de cette fin de variante s'est faite d'une traite,
+  // sans erreur ni Recommencer (clean, voir RepertoireScreen.tsx).
+  const mastered = node.is_book_end && status === 'learned' && node.clean;
 
   return (
     <>
@@ -292,7 +299,11 @@ export function TreeLegend() {
     { color: Colors.success, label: t('openings.legendLearned') },
   ];
   return (
-    <View style={styles.legend}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.legend}
+      contentContainerStyle={styles.legendContent}>
       {items.map((item) => (
         <View key={item.label} style={styles.legendItem}>
           <View
@@ -302,12 +313,12 @@ export function TreeLegend() {
               item.outline && styles.legendDotOutline,
             ]}
           />
-          <AppText muted variant="label">
+          <AppText muted style={styles.legendLabel}>
             {item.label}
           </AppText>
         </View>
       ))}
-    </View>
+    </ScrollView>
   );
 }
 
@@ -336,21 +347,33 @@ const styles = StyleSheet.create({
     transformOrigin: 'top left',
   },
   legend: {
+    // ScrollView grandit par défaut (flexGrow:1, contrairement à View) : sans
+    // ce blocage, elle se dispute l'espace vertical avec l'arbre et prend la
+    // moitié de l'écran à elle seule.
+    flexGrow: 0,
+    flexShrink: 0,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    columnGap: Spacing.md,
-    rowGap: Spacing.xs,
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
+  // flexGrow:1 ici seulement (le contenu défilable, pas la ScrollView
+  // elle-même) : centre la légende si elle tient, scrolle sinon.
+  legendContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: Spacing.xs,
+    columnGap: 3,
+    marginRight: Spacing.sm,
   },
   legendDot: {
-    width: 10,
-    height: 10,
+    width: 7,
+    height: 7,
     borderRadius: Radius.sm,
+  },
+  legendLabel: {
+    fontSize: 10,
   },
   legendDotOutline: {
     borderWidth: 1,

@@ -198,11 +198,17 @@ export function Select<T extends string>({
   value,
   options,
   onChange,
+  hideLabel = false,
+  style,
 }: {
   label: string;
   value: T;
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
+  /** N'affiche que la valeur (le libellé reste lu par les lecteurs d'écran
+   * et sert de titre à la feuille de choix). */
+  hideLabel?: boolean;
+  style?: StyleProp<ViewStyle>;
 }) {
   const [open, setOpen] = useState(false);
   const current = options.find((option) => option.value === value)?.label ?? '';
@@ -213,8 +219,12 @@ export function Select<T extends string>({
         accessibilityRole="button"
         accessibilityLabel={`${label} : ${current}`}
         onPress={() => setOpen(true)}
-        style={({ pressed }) => [styles.selectRow, pressed && styles.buttonDimmed]}>
-        <AppText>{label}</AppText>
+        style={({ pressed }) => [
+          styles.selectRow,
+          pressed && styles.buttonDimmed,
+          style,
+        ]}>
+        {!hideLabel ? <AppText>{label}</AppText> : null}
         <AppText muted variant="label">
           {current}
         </AppText>

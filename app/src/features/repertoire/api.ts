@@ -26,3 +26,19 @@ export async function saveRepertoireReview(
   const { error } = await supabase.from('repertoire_nodes').update(update).eq('id', id);
   if (error) throw error;
 }
+
+/** Remet tout le camp à « jamais revu » : efface l'état FSRS et les fins de
+ * variante marquées maîtrisées. Irréversible côté données (pas de undo). */
+export async function resetRepertoireProgress(side: 'white' | 'black'): Promise<void> {
+  const { error } = await supabase
+    .from('repertoire_nodes')
+    .update({
+      fsrs_stability: null,
+      fsrs_difficulty: null,
+      fsrs_due_at: null,
+      fsrs_card: null,
+      clean: false,
+    })
+    .eq('side', side);
+  if (error) throw error;
+}

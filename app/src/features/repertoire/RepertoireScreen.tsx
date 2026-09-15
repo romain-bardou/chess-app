@@ -10,6 +10,7 @@ import { fetchRepertoireTree, saveRepertoireReview } from '@/features/repertoire
 import {
   ROOT,
   ancestorPath,
+  computeEffectiveStatuses,
   groupByParent,
   pickMyNode,
   pickOpponentNode,
@@ -19,7 +20,7 @@ import { useLineReplay } from '@/features/review/useLineReplay';
 import { reviewRepertoireNode } from '@/lib/fsrs';
 import { t } from '@/lib/i18n';
 import type { RepertoireNode } from '@/lib/types';
-import { Colors, Spacing } from '@/theme/atelier';
+import { Colors, Radius, Spacing } from '@/theme/atelier';
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const MAX_BOARD_SIZE = 440;
@@ -30,11 +31,32 @@ type Color = 'white' | 'black';
 type Mode = Color | 'random';
 type Phase = 'walking' | 'wrong' | 'done';
 type TreeStatus = 'idle' | 'loading' | 'ready' | 'error';
+type VariantFilter = 'all' | 'unmastered' | 'mastered';
 
 /** Tire un camp pour la prochaine carte. Fixe si `mode` est un camp donné. */
 function rollColor(mode: Mode): Color {
   if (mode !== 'random') return mode;
   return Math.random() < 0.5 ? 'white' : 'black';
+}
+
+/** Fins de ligne dont le statut correspond au filtre (même critère que
+ * l'arbre : status FSRS effectif "acquis" + `clean`, voir TreeDiagram). */
+function eligibleLeaves(nodes: RepertoireNode[], filter: VariantFilter): RepertoireNode[] {
+  const bookEnds = nodes.filter((node) => node.is_book_end);
+  if (filter === 'all') return bookEnds;
+  const statuses = computeEffectiveStatuses(nodes);
+  return bookEnds.filter((node) => {
+    const mastered = statuses.get(node.id) === 'learned' && node.clean;
+    return filter === 'mastered' ? mastered : !mastered;
+  });
+}
+
+/** Chaîne complète racine→feuille (feuille incluse), pour forcer le
+ * parcours entier vers une variante précise (voir `eligibleLeaves`). */
+function fullPathTo(nodes: RepertoireNode[], leaf: RepertoireNode): RepertoireNode[] {
+  const chain = ancestorPath(nodes, leaf.id);
+  chain.push(leaf);
+  return chain;
 }
 
 interface WrongInfo {
@@ -66,6 +88,8 @@ export function RepertoireScreen() {
   const [nodes, setNodes] = useState<RepertoireNode[]>([]);
   const [treeStatus, setTreeStatus] = useState<TreeStatus>('idle');
   const [treeError, setTreeError] = useState<string | null>(null);
+  const [variantFilter, setVariantFilter] = useState<VariantFilter>('all');
+  const [filterEmpty, setFilterEmpty] = useState(false);
 
   const [path, setPath] = useState<RepertoireNode[]>([]);
   const [phase, setPhase] = useState<Phase>('walking');
@@ -79,6 +103,11 @@ export function RepertoireScreen() {
   const [startedAt, setStartedAt] = useState(Date.now());
   const [saveError, setSaveError] = useState<string | null>(null);
   const retrySaveRef = useRef<(() => void) | null>(null);
+  // Pas un state : ne doit jamais provoquer de re-render, seulement être lu
+  // au moment où la ligne se termine. Vrai dès qu'une erreur ou un
+  // Recommencer a eu lieu depuis la carte courante — la fin de variante
+  // atteinte ensuite ne compte alors pas comme « maîtrisée » (clean=false).
+  const runTaintedRef = useRef(false);
 
   const childrenMap = useMemo(() => groupByParent(nodes), [nodes]);
   const currentParentKey = path.length ? path[path.length - 1].id : ROOT;
@@ -92,27 +121,54 @@ export function RepertoireScreen() {
   const myLetter = color === 'black' ? 'b' : 'w';
   const myTurnNow = phase === 'walking' && currentTurn === myLetter && !waitingOpponent;
 
-  const pickColor = useCallback((next: Color) => {
-    setColor(next);
-    setScriptedPicks(null);
-    setPath([]);
-    setPhase('walking');
-    setWrongInfo(null);
-    setDetailsOpen(true);
-    setVariantOpen(false);
-    setSaveError(null);
-    setTreeStatus('loading');
-    setTreeError(null);
-    fetchRepertoireTree(next)
-      .then((rows) => {
-        setNodes(rows);
-        setTreeStatus('ready');
-      })
-      .catch((cause: unknown) => {
-        setTreeError(cause instanceof Error ? cause.message : String(cause));
-        setTreeStatus('error');
-      });
+  // Choisit une variante à forcer selon le filtre courant (`buildScript` sur
+  // la chaîne racine→feuille), ou repasse en tirage libre pour "Toutes
+  // variantes". `filterEmpty` signale qu'aucune ligne ne correspond, plutôt
+  // que de retomber silencieusement sur un tirage non filtré.
+  const applyFilterSelection = useCallback((filter: VariantFilter, pool: RepertoireNode[]) => {
+    if (filter === 'all') {
+      setScriptedPicks(null);
+      setFilterEmpty(false);
+      return;
+    }
+    const candidates = eligibleLeaves(pool, filter);
+    if (candidates.length === 0) {
+      setScriptedPicks(null);
+      setFilterEmpty(true);
+      return;
+    }
+    const leaf = candidates[Math.floor(Math.random() * candidates.length)];
+    setScriptedPicks(buildScript(fullPathTo(pool, leaf)));
+    setFilterEmpty(false);
   }, []);
+
+  const pickColor = useCallback(
+    (next: Color) => {
+      setColor(next);
+      setScriptedPicks(null);
+      setPath([]);
+      setPhase('walking');
+      setWrongInfo(null);
+      setDetailsOpen(true);
+      setVariantOpen(false);
+      setSaveError(null);
+      setFilterEmpty(false);
+      runTaintedRef.current = false;
+      setTreeStatus('loading');
+      setTreeError(null);
+      fetchRepertoireTree(next)
+        .then((rows) => {
+          setNodes(rows);
+          setTreeStatus('ready');
+          applyFilterSelection(variantFilter, rows);
+        })
+        .catch((cause: unknown) => {
+          setTreeError(cause instanceof Error ? cause.message : String(cause));
+          setTreeStatus('error');
+        });
+    },
+    [variantFilter, applyFilterSelection]
+  );
 
   // Première carte au montage, sur le camp par défaut ("Blancs") : le menu
   // déroulant a toujours une valeur, pas de bouton à taper avant de démarrer.
@@ -131,6 +187,10 @@ export function RepertoireScreen() {
       return;
     }
     appliedStartRef.current = true;
+    // On saute directement au parent de ce nœud : on n'a pas prouvé le reste
+    // de la variante depuis le début, donc l'atteindre ne doit jamais la
+    // valider comme maîtrisée dans l'arbre (voir le blocage "clean" plus bas).
+    runTaintedRef.current = true;
     const chain = ancestorPath(nodes, startNodeId);
     setScriptedPicks(buildScript(chain));
     setPath(chain);
@@ -145,6 +205,14 @@ export function RepertoireScreen() {
       return;
     }
     if (currentChildren.length === 0) {
+      // Fin de variante : n'enregistre "clean" (maîtrisée) que si on l'a
+      // atteinte d'une traite depuis la carte courante, sans erreur ni
+      // Recommencer. Un Recommencer la remet à false même si le nœud avait
+      // déjà été marqué clean par une tentative précédente.
+      const leaf = path[path.length - 1];
+      if (leaf) {
+        saveRepertoireReview(leaf.id, { clean: !runTaintedRef.current }).catch(() => {});
+      }
       setPhase('done');
       return;
     }
@@ -191,6 +259,7 @@ export function RepertoireScreen() {
       if (correct) {
         setPath((previous) => [...previous, target]);
       } else {
+        runTaintedRef.current = true;
         setWrongInfo({ target, playedSan: move.san });
         setDetailsOpen(true);
         setPhase('wrong');
@@ -200,6 +269,7 @@ export function RepertoireScreen() {
   );
 
   const handleRestart = useCallback(() => {
+    runTaintedRef.current = true;
     setScriptedPicks(buildScript(path));
     setPath([]);
     setPhase('walking');
@@ -216,13 +286,14 @@ export function RepertoireScreen() {
       pickColor(rollColor('random'));
       return;
     }
-    setScriptedPicks(null);
     setPath([]);
     setPhase('walking');
     setWrongInfo(null);
     setDetailsOpen(true);
     setVariantOpen(false);
-  }, [mode, pickColor]);
+    runTaintedRef.current = false;
+    applyFilterSelection(variantFilter, nodes);
+  }, [mode, pickColor, variantFilter, nodes, applyFilterSelection]);
 
   // Position atteinte en suivant la ligne jouée : chaque nœud ne stocke que
   // la position d'avant son propre coup, donc on les rejoue depuis le début.
@@ -260,19 +331,44 @@ export function RepertoireScreen() {
 
   return (
     <Screen scroll>
-      <Select
-        label={t('openings.colorLabel')}
-        value={mode}
-        options={[
-          { value: 'white', label: t('openings.chooseWhite') },
-          { value: 'black', label: t('openings.chooseBlack') },
-          { value: 'random', label: t('openings.chooseRandom') },
-        ]}
-        onChange={(next) => {
-          setMode(next);
-          pickColor(rollColor(next));
-        }}
-      />
+      <View style={styles.controlsRow}>
+        <Select
+          label={t('openings.repertoireLabel')}
+          value={mode}
+          hideLabel
+          options={[
+            { value: 'white', label: t('openings.scotch') },
+            { value: 'black', label: t('openings.caroKann') },
+            { value: 'random', label: t('openings.chooseRandom') },
+          ]}
+          onChange={(next) => {
+            setMode(next);
+            pickColor(rollColor(next));
+          }}
+          style={styles.pillButton}
+        />
+        <Select
+          label={t('openings.filterLabel')}
+          value={variantFilter}
+          hideLabel
+          options={[
+            { value: 'all', label: t('openings.filterAll') },
+            { value: 'unmastered', label: t('openings.filterUnvalidated') },
+            { value: 'mastered', label: t('openings.filterValidated') },
+          ]}
+          onChange={(next) => {
+            setVariantFilter(next);
+            setPath([]);
+            setPhase('walking');
+            setWrongInfo(null);
+            setDetailsOpen(true);
+            setVariantOpen(false);
+            runTaintedRef.current = false;
+            applyFilterSelection(next, nodes);
+          }}
+          style={styles.pillButton}
+        />
+      </View>
       {mode === 'random' && color ? (
         <AppText muted variant="label" style={styles.playingAs}>
           {t('openings.playingAs', {
@@ -296,7 +392,12 @@ export function RepertoireScreen() {
         />
       </View>
 
-      {!color ? null : treeStatus === 'loading' ? (
+      {!color ? null : filterEmpty ? (
+        <EmptyState
+          title={t('openings.filterEmptyTitle')}
+          body={t('openings.filterEmptyBody')}
+        />
+      ) : treeStatus === 'loading' ? (
         <Loader label={t('common.loading')} />
       ) : treeStatus === 'error' ? (
         <EmptyState
@@ -430,6 +531,19 @@ function Outcome({
 }
 
 const styles = StyleSheet.create({
+  controlsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: Spacing.sm,
+    rowGap: Spacing.xs,
+  },
+  pillButton: {
+    borderWidth: 1,
+    borderColor: Colors.accent,
+    borderRadius: Radius.lg,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+  },
   playingAs: {
     marginTop: Spacing.xs,
   },

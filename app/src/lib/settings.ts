@@ -18,6 +18,10 @@ export const SHUFFLE_QUEUE = 'shuffleQueue';
 /** Thème sur lequel filtrer la file de révision par défaut ; vide = tous. */
 export const REVIEW_THEME_FILTER = 'reviewThemeFilter';
 
+/** Boutons +/− et pourcentage sur l'arbre de répertoire ; masqués, seul le
+ * pincement zoome encore. */
+export const SHOW_TREE_ZOOM_CONTROLS = 'showTreeZoomControls';
+
 /**
  * Booléen persistant.
  *

@@ -5,6 +5,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { AppText, Button, EmptyState, Loader, Panel, Screen } from '@/components/ui';
 import { fetchDueForecast, fetchGlobalStats, fetchThemeStats } from '@/features/review/api';
 import { useAuth } from '@/lib/auth';
+import { accuracy, formatPercent } from '@/lib/format';
 import { t, translateTheme } from '@/lib/i18n';
 import type { DueForecast, GlobalStats, ThemeStat } from '@/lib/types';
 import { Colors, Radius, Spacing } from '@/theme/atelier';
@@ -17,16 +18,6 @@ function dayLabel(date: string, offset: number): string {
   if (offset === 0) return t('stats.today');
   if (offset === 1) return t('stats.tomorrow');
   return WEEKDAY_LABELS[new Date(`${date}T00:00:00`).getDay()];
-}
-
-/** Taux de réussite, ou `null` si la carte n'a jamais été tentée. */
-function accuracy(correct: number, incorrect: number): number | null {
-  const attempts = correct + incorrect;
-  return attempts === 0 ? null : correct / attempts;
-}
-
-function formatPercent(value: number): string {
-  return `${Math.round(value * 100)} %`;
 }
 
 /** Rangées visibles d'emblée dans « Par thème tactique » avant « Voir plus ». */
@@ -162,6 +153,14 @@ export function StatsScreen() {
               colonnes de la rangée du dessus, sans nœud de texte vide. */}
           <View style={styles.metric} />
         </View>
+        {attempted.length > 0 ? (
+          <AppText muted variant="label" style={styles.weakestTheme}>
+            {t('stats.weakestTheme', {
+              theme: translateTheme(attempted[0].theme),
+              rate: formatPercent(accuracy(attempted[0].correct, attempted[0].incorrect) ?? 0),
+            })}
+          </AppText>
+        ) : null}
       </Panel>
 
       <Panel style={styles.panel}>
@@ -412,6 +411,9 @@ const styles = StyleSheet.create({
   },
   metrics: {
     flexDirection: 'row',
+    marginTop: Spacing.sm,
+  },
+  weakestTheme: {
     marginTop: Spacing.sm,
   },
   metric: {

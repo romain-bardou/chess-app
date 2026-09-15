@@ -543,6 +543,7 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
     justifyContent: 'space-between',
     paddingTop: Spacing.sm,
+    marginBottom: 5,
   },
   boardWrapper: {
     alignItems: 'center',

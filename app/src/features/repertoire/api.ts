@@ -27,6 +27,16 @@ export async function saveRepertoireReview(
   if (error) throw error;
 }
 
+/** Nombre de cartes du répertoire (Blancs + Noirs) dues maintenant. */
+export async function fetchRepertoireDueCount(): Promise<number> {
+  const { count, error } = await supabase
+    .from('repertoire_nodes')
+    .select('*', { count: 'exact', head: true })
+    .lte('fsrs_due_at', new Date().toISOString());
+  if (error) throw error;
+  return count ?? 0;
+}
+
 /** Remet tout le camp à « jamais revu » : efface l'état FSRS et les fins de
  * variante marquées maîtrisées. Irréversible côté données (pas de undo). */
 export async function resetRepertoireProgress(side: 'white' | 'black'): Promise<void> {

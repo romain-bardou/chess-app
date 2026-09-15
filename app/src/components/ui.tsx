@@ -241,30 +241,45 @@ export function Select<T extends string>({
           accessibilityLabel={t('common.cancel')}
           onPress={() => setOpen(false)}>
           <Pressable style={styles.selectSheet} onPress={(event) => event.stopPropagation()}>
-            <AppText variant="heading" style={styles.selectSheetTitle}>
-              {label}
-            </AppText>
-            {options.map((option) => {
-              const selected = option.value === value;
-              return (
-                <Pressable
-                  key={option.value}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  onPress={() => {
-                    onChange(option.value);
-                    setOpen(false);
-                  }}
-                  style={({ pressed }) => [
-                    styles.selectOption,
-                    pressed && styles.buttonDimmed,
-                  ]}>
-                  <AppText color={selected ? Colors.accent : undefined}>
-                    {option.label}
-                  </AppText>
-                </Pressable>
-              );
-            })}
+            <View style={styles.selectSheetHeader}>
+              <AppText variant="heading">{label}</AppText>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('common.close')}
+                hitSlop={12}
+                onPress={() => setOpen(false)}
+                style={({ pressed }) => [
+                  styles.selectCloseButton,
+                  pressed && styles.buttonDimmed,
+                ]}>
+                <AppText variant="heading" muted>
+                  ✕
+                </AppText>
+              </Pressable>
+            </View>
+            <ScrollView style={styles.selectOptionsScroll}>
+              {options.map((option) => {
+                const selected = option.value === value;
+                return (
+                  <Pressable
+                    key={option.value}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    onPress={() => {
+                      onChange(option.value);
+                      setOpen(false);
+                    }}
+                    style={({ pressed }) => [
+                      styles.selectOption,
+                      pressed && styles.buttonDimmed,
+                    ]}>
+                    <AppText color={selected ? Colors.accent : undefined}>
+                      {option.label}
+                    </AppText>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -300,10 +315,12 @@ const styles = StyleSheet.create({
   screenContent: {
     flex: 1,
     paddingHorizontal: Spacing.md,
+    paddingTop: 5,
   },
   scrollContent: {
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.xl,
+    paddingTop: 5,
   },
   panel: {
     backgroundColor: Colors.surface,
@@ -382,9 +399,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.xl,
+    maxHeight: '60%',
   },
-  selectSheetTitle: {
+  selectSheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: Spacing.sm,
+  },
+  selectCloseButton: {
+    padding: Spacing.xs,
+  },
+  selectOptionsScroll: {
+    flexGrow: 0,
   },
   selectOption: {
     paddingVertical: Spacing.sm + 2,

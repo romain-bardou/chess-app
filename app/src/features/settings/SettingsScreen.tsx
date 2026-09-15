@@ -50,24 +50,39 @@ export function SettingsScreen() {
     { value: 'random', label: t('review.orderRandom') },
   ];
 
-  const confirmResetRepertoire = () => {
-    Alert.alert(t('openings.resetConfirmTitle'), t('openings.resetConfirmBody'), [
-      { text: t('common.cancel'), style: 'cancel' },
-      {
-        text: t('openings.resetTree'),
-        style: 'destructive',
-        onPress: () => {
-          setResetting(true);
-          resetRepertoireProgress(resetSide)
-            .catch((cause: unknown) =>
-              Alert.alert(
-                t('common.error'),
-                cause instanceof Error ? cause.message : String(cause)
-              )
-            )
-            .finally(() => setResetting(false));
+  const runReset = (scope: 'current' | 'all') => {
+    setResetting(true);
+    const task =
+      scope === 'all'
+        ? Promise.all([resetRepertoireProgress('white'), resetRepertoireProgress('black')])
+        : resetRepertoireProgress(resetSide);
+    task
+      .catch((cause: unknown) =>
+        Alert.alert(t('common.error'), cause instanceof Error ? cause.message : String(cause))
+      )
+      .finally(() => setResetting(false));
+  };
+
+  const confirmReset = (scope: 'current' | 'all') => {
+    Alert.alert(
+      t('openings.resetConfirmTitle'),
+      scope === 'all' ? t('openings.resetConfirmBodyAll') : t('openings.resetConfirmBody'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('openings.resetTree'),
+          style: 'destructive',
+          onPress: () => runReset(scope),
         },
-      },
+      ]
+    );
+  };
+
+  const chooseResetScope = () => {
+    Alert.alert(t('openings.resetScopeTitle'), undefined, [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('openings.resetScopeCurrent'), onPress: () => confirmReset('current') },
+      { text: t('openings.resetScopeAll'), onPress: () => confirmReset('all') },
     ]);
   };
 
@@ -118,7 +133,7 @@ export function SettingsScreen() {
           label={resetting ? t('openings.resetting') : t('openings.resetTree')}
           variant="secondary"
           disabled={resetting}
-          onPress={confirmResetRepertoire}
+          onPress={chooseResetScope}
           style={styles.resetButton}
         />
       </Panel>

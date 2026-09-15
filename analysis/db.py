@@ -142,16 +142,19 @@ class Supabase:
         return self._book_cache[key]
 
     def upsert_repertoire_node(self, row: Dict[str, Any]) -> str:
-        """Insère ou met à jour un noeud de répertoire par (fen, move_san).
+        """Insère ou met à jour un noeud de répertoire par (fen, move_san, side).
 
-        Rejouable : relancer analysis/repertoire.py après avoir changé
-        LICHESS_RATING_BAND réécrit les lignes existantes (popularité,
-        is_book_end) au lieu de les dupliquer.
+        `side` fait partie de la clé : les deux répertoires partagent la
+        position de départ (1.e4), une fois comme notre coup, une fois comme
+        coup adverse assumé — sans `side`, la seconde ligne ne pourrait
+        jamais être insérée. Rejouable : relancer analysis/repertoire.py
+        après avoir changé LICHESS_RATING_BAND réécrit les lignes existantes
+        (popularité, is_book_end) au lieu de les dupliquer.
         """
         response = self._client.post(
             "/repertoire_nodes",
             json=[row],
-            params={"on_conflict": "fen,move_san"},
+            params={"on_conflict": "fen,move_san,side"},
             headers={"Prefer": "resolution=merge-duplicates,return=representation"},
         )
         response.raise_for_status()

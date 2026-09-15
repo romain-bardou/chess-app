@@ -2,7 +2,7 @@
 
 Script à part, non branché sur le pipeline GitHub Actions : à relancer à la
 main quand LICHESS_RATING_BAND doit monter avec l'elo (rejouable, upsert sur
-(fen, move_san) — voir migration 006).
+(fen, move_san, side) — voir migrations 006 et 007).
 
 Deux répertoires fixes, choisis par Romain plutôt que dérivés des données :
 Écossaise aux Blancs, Caro-Kann aux Noirs. `entry` fige les coups qui
@@ -77,7 +77,15 @@ class MemorySink:
         self._rows: Dict[str, Dict[str, Any]] = {}
 
     def upsert_repertoire_node(self, row: Dict[str, Any]) -> str:
-        node_id = deterministic_id(row["fen"], row["move_san"])
+        # L'entrée fixe des deux répertoires part de la même position initiale
+        # (1.e4) : sans le camp dans la clé, le premier coup de l'un et le
+        # coup adverse assumé de l'autre calculeraient le même id et
+        # s'écraseraient l'un l'autre. Sans risque de collision au-delà (les
+        # arbres divergent dès le 2e ou 3e demi-coup), donc on ne qualifie
+        # que les lignes d'entrée pour ne pas changer l'id des ~500 lignes
+        # déjà issues de Lichess.
+        side = row["side"] if row["source"] == "lichess-entry" else None
+        node_id = deterministic_id(row["fen"], row["move_san"], side)
         if node_id not in self._rows:
             self._rows[node_id] = {**row, "id": node_id}
         return node_id
@@ -87,8 +95,9 @@ class MemorySink:
         return list(self._rows.values())
 
 
-def deterministic_id(fen: str, move_san: str) -> str:
-    """Id stable pour une (fen, move_san) donnée.
+def deterministic_id(fen: str, move_san: str, side: Optional[str] = None) -> str:
+    """Id stable pour une (fen, move_san) donnée (+ camp pour les lignes
+    d'entrée, voir `MemorySink.upsert_repertoire_node`).
 
     Les enfants d'un noeud référencent son id avant même que la ligne SQL
     correspondante ait été exécutée, donc l'id ne peut pas venir de
@@ -96,7 +105,10 @@ def deterministic_id(fen: str, move_san: str) -> str:
     uuid4 au hasard garde aussi l'id stable d'un run à l'autre : un futur
     upsert par ON CONFLICT référencera le même id, pas un nouveau.
     """
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"repertoire_nodes:{fen}|{move_san}"))
+    key = f"repertoire_nodes:{fen}|{move_san}"
+    if side is not None:
+        key = f"{key}:{side}"
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, key))
 
 
 def insert_opponent_replies(
@@ -255,7 +267,7 @@ def _sql_literal(value: Any) -> str:
 
 
 def rows_to_sql(rows: List[Dict[str, Any]]) -> str:
-    """Un seul INSERT multi-lignes, upsert sur (fen, move_san) — voir 006."""
+    """Un seul INSERT multi-lignes, upsert sur (fen, move_san, side) — voir 007."""
     columns = (
         "id",
         "fen",
@@ -272,7 +284,7 @@ def rows_to_sql(rows: List[Dict[str, Any]]) -> str:
     updates = ", ".join(f"{col} = excluded.{col}" for col in columns if col != "id")
     return (
         f"insert into repertoire_nodes ({', '.join(columns)})\nvalues\n  {values}\n"
-        f"on conflict (fen, move_san) do update set {updates};\n"
+        f"on conflict (fen, move_san, side) do update set {updates};\n"
     )
 
 

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { Chessboard, type BoardMove } from '@/chess/Chessboard';
 import { uciSquares } from '@/chess/play';
+import { ReplayControls } from '@/components/ReplayControls';
 import {
   AppText,
   Button,
@@ -536,66 +536,6 @@ function LineFilter({
   );
 }
 
-function ReplayControls({ replay }: { replay: LineReplay }) {
-  if (replay.total <= 0) return null;
-  return (
-    <View style={styles.replayControls}>
-      <StepButton
-        direction="back"
-        accessibilityLabel={t('review.stepBack')}
-        disabled={replay.atStart}
-        onPress={replay.previous}
-      />
-      <AppText muted variant="label">
-        {t('review.step', { step: replay.step, total: replay.total })}
-      </AppText>
-      <StepButton
-        direction="forward"
-        accessibilityLabel={t('review.stepForward')}
-        disabled={replay.atEnd}
-        onPress={replay.next}
-      />
-    </View>
-  );
-}
-
-/** Chevron dessiné en trait, plutôt qu'un glyphe Unicode ◀ / ▶. */
-function StepButton({
-  direction,
-  disabled = false,
-  accessibilityLabel,
-  onPress,
-}: {
-  direction: 'back' | 'forward';
-  disabled?: boolean;
-  accessibilityLabel: string;
-  onPress: () => void;
-}) {
-  const d = direction === 'back' ? 'M12 5L7 11L12 17' : 'M8 5L13 11L8 17';
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.stepButton,
-        (pressed || disabled) && styles.stepButtonDimmed,
-      ]}>
-      <Svg width={22} height={22} viewBox="0 0 22 22">
-        <Path
-          d={d}
-          stroke={Colors.accent}
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-        />
-      </Svg>
-    </Pressable>
-  );
-}
 
 const styles = StyleSheet.create({
   header: {
@@ -673,25 +613,6 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
     marginBottom: Spacing.sm,
     columnGap: Spacing.sm,
-  },
-  replayControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: Spacing.sm,
-    columnGap: Spacing.sm,
-  },
-  stepButton: {
-    width: 44,
-    height: 44,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepButtonDimmed: {
-    opacity: 0.6,
   },
   actions: {
     flexDirection: 'row',

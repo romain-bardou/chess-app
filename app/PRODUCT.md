@@ -47,11 +47,10 @@ what's due.
   on import).
 - App: Expo/React Native (`app/`), single authenticated owner account.
 - Navigation: two tabs, Accueil (`src/features/home`) and Statistiques.
-  Accueil is a chooser for the mode to train — today it links only to
-  Puzzles (`/puzzles`, a stacked route outside the tab bar); an Ouvertures
-  entry will join it once the phase 2 repertoire generator exists (see
-  `repertoire_nodes` below). Accueil also links to Réglages (`/settings`, also
-  stacked, `src/features/settings`).
+  Accueil is a chooser for the mode to train — it links to Puzzles
+  (`/puzzles`) and Ouvertures (`/openings`, `src/features/repertoire`), both
+  stacked routes outside the tab bar. Accueil also links to Réglages
+  (`/settings`, also stacked, `src/features/settings`).
 - Review flow (`src/features/review`): FSRS-scheduled puzzle queue, custom
   SVG chessboard (`src/chess/Chessboard.tsx`) for attempting/exploring moves.
   Theme filter and review order (by game or random) are no longer in-screen
@@ -60,13 +59,28 @@ what's due.
   still overrides the default for that session via the `/puzzles?theme=`
   param.
 - Stats flow (`src/features/stats`): performance broken down by tactical
-  theme.
-- Opening repertoire (planned, phase 2): `repertoire_nodes` table exists in
-  the schema (FSRS columns, tree via `parent_node_id`) but has 0 rows — no
-  generator populates it yet (would pull from the Lichess Opening Explorer:
-  Scotch/Écossaise as White, Caro-Kann as Black) and no app-side review flow
-  exists for it. Currently only wired into `analysis/main.py`'s book-move
-  exception (queried by `fen` + `move_san`, not surfaced in the app).
+  theme, plus a due-cards calendar and an FSRS-state breakdown
+  (`/categories`).
+- Opening repertoire review (`src/features/repertoire`): not a flashcard
+  queue like puzzles — a full line drilled from the start position against a
+  simulated opponent, picking White or Black first. The whole `repertoire_nodes`
+  tree for that side is fetched once (`fetchRepertoireTree`) and walked
+  client-side (`tree.ts`): at the user's own turn, the sibling with the
+  earliest `fsrs_due_at` is the move to find (FSRS breaks ties, not
+  popularity — each attempt, right or wrong, reschedules that node via
+  `reviewRepertoireNode`/`saveRepertoireReview`); at the opponent's turn, a
+  sibling is sampled weighted by its real Lichess `popularity`, auto-played
+  after a short delay. A wrong move stops the line and shows what was
+  expected; "Recommencer" replays the identical opponent choices from this
+  attempt (scripted), "Suivante" starts a fresh walk (opponent re-rolled).
+  Back/forward arrows (shared `ReplayControls`, via `useLineReplay`) let you
+  step through the line afterwards, and a collapsible "Variante" panel lists
+  the moves played, one per line. The phase 2 generator
+  (`analysis/repertoire.py`, in progress, not yet wired into the pipeline)
+  hasn't populated `repertoire_nodes` yet, so this screen currently only
+  shows its empty state per side — the walk logic is ready for when rows
+  exist. `repertoire_nodes` is also queried by `analysis/main.py`'s
+  book-move exception (by `fen` + `move_san`).
 
 ## Capabilities and Constraints
 

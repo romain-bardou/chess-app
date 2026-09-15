@@ -8,7 +8,7 @@
 import { createEmptyCard, fsrs, generatorParameters, Rating } from 'ts-fsrs';
 import type { Card, CardInput, Grade } from 'ts-fsrs';
 
-import type { Mistake, StoredFsrsCard } from '@/lib/types';
+import type { Mistake, RepertoireNode, StoredFsrsCard } from '@/lib/types';
 
 /** Paramètres par défaut de ts-fsrs : une seule mémoire pour l'instant. */
 const scheduler = fsrs(generatorParameters());
@@ -59,9 +59,12 @@ export const GRADE_LABELS: Record<Grade, 'Again' | 'Hard' | 'Good' | 'Easy'> = {
   [Rating.Easy]: 'Easy',
 };
 
-/** Reconstruit la Card ts-fsrs à partir de la ligne Supabase. */
-export function toCard(mistake: Mistake, now: Date = new Date()): CardInput | Card {
-  const stored = mistake.fsrs_card;
+/** Reconstruit la Card ts-fsrs à partir de la ligne Supabase (`mistakes` ou `repertoire_nodes`). */
+export function toCard(
+  row: { fsrs_card: StoredFsrsCard | null },
+  now: Date = new Date()
+): CardInput | Card {
+  const stored = row.fsrs_card;
   if (!stored) return createEmptyCard(now);
   return {
     due: stored.due,
@@ -140,6 +143,45 @@ export function reviewMistake(
       times_seen: mistake.times_seen + 1,
       times_correct: mistake.times_correct + (correct ? 1 : 0),
       times_incorrect: mistake.times_incorrect + (correct ? 0 : 1),
+    },
+  };
+}
+
+export interface RepertoireReviewOutcome {
+  grade: Grade;
+  card: Card;
+  /** Colonnes à écrire dans `repertoire_nodes` : pas de compteurs times_*, contrairement à `mistakes`. */
+  update: {
+    fsrs_card: StoredFsrsCard;
+    fsrs_stability: number;
+    fsrs_difficulty: number;
+    fsrs_due_at: string;
+  };
+}
+
+/**
+ * Calcule le nouvel état d'une ligne de répertoire après une tentative.
+ *
+ * Un seul coup à retrouver par carte (pas de variante à voir derrière) : le
+ * barème de temps reste le plus serré, `expectedSeconds(0)`.
+ */
+export function reviewRepertoireNode(
+  node: RepertoireNode,
+  correct: boolean,
+  elapsedSeconds: number,
+  now: Date = new Date()
+): RepertoireReviewOutcome {
+  const grade = gradeAttempt(correct, elapsedSeconds, 0);
+  const { card } = scheduler.next(toCard(node, now), now, grade);
+
+  return {
+    grade,
+    card,
+    update: {
+      fsrs_card: serializeCard(card),
+      fsrs_stability: card.stability,
+      fsrs_difficulty: card.difficulty,
+      fsrs_due_at: card.due.toISOString(),
     },
   };
 }

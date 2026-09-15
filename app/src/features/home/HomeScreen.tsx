@@ -6,9 +6,9 @@ import { t } from '@/lib/i18n';
 import { Colors, Radius, Spacing } from '@/theme/atelier';
 
 /**
- * Choix du mode de travail. Un seul mode existe pour l'instant (puzzles) ;
- * la révision d'ouvertures rejoindra cet écran une fois le générateur phase 2
- * (repertoire_nodes) construit.
+ * Choix du mode de travail : puzzles tactiques ou ouvertures. Le générateur
+ * phase 2 (`repertoire_nodes`) n'est pas encore branché — la carte Ouvertures
+ * mène à un écran de révision qui ne montrera qu'un état vide en attendant.
  */
 export function HomeScreen() {
   const router = useRouter();
@@ -50,6 +50,20 @@ export function HomeScreen() {
           {t('home.enter')} →
         </AppText>
       </Pressable>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${t('home.openingsTitle')}. ${t('home.openingsBody')}`}
+        onPress={() => router.push('/openings')}
+        style={({ pressed }) => [styles.card, styles.secondCard, pressed && styles.cardPressed]}>
+        <AppText variant="heading">{t('home.openingsTitle')}</AppText>
+        <AppText muted style={styles.cardBody}>
+          {t('home.openingsBody')}
+        </AppText>
+        <AppText color={Colors.accent} variant="label" style={styles.cardCta}>
+          {t('home.enter')} →
+        </AppText>
+      </Pressable>
     </Screen>
   );
 }
@@ -80,6 +94,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.border,
     padding: Spacing.md,
+  },
+  secondCard: {
+    marginTop: Spacing.md,
   },
   cardPressed: {
     opacity: 0.7,

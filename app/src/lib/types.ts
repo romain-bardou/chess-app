@@ -116,3 +116,28 @@ export interface DueForecast {
   /** Dues après la fenêtre couverte par `days`. */
   later: number;
 }
+
+/**
+ * Un nœud du répertoire d'ouvertures (phase 2, `repertoire_nodes`).
+ *
+ * `fen` est la position AVANT le coup, `move_san` le coup à trouver depuis
+ * cette position (voir la convention actée pour le générateur phase 2 :
+ * memory `repertoire-nodes-fen-convention`).
+ */
+export interface RepertoireNode {
+  id: string;
+  fen: string;
+  side: 'white' | 'black' | null;
+  parent_node_id: string | null;
+  move_san: string | null;
+  source: string | null;
+  popularity: number | null;
+  is_book_end: boolean;
+  card_type: string;
+  fsrs_stability: number | null;
+  fsrs_difficulty: number | null;
+  /** Contrairement à `mistakes`, pas de défaut en base : nul avant la première révision. */
+  fsrs_due_at: string | null;
+  fsrs_card: StoredFsrsCard | null;
+  created_at: string;
+}

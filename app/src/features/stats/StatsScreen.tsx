@@ -199,6 +199,17 @@ export function StatsScreen() {
         />
       </Panel>
 
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${t('stats.repertoireTreeTitle')}. ${t('stats.repertoireTreeBody')}`}
+        onPress={() => router.push('/openings-tree')}
+        style={({ pressed }) => [styles.treeCard, pressed && styles.pressed]}>
+        <AppText variant="heading">{t('stats.repertoireTreeTitle')}</AppText>
+        <AppText muted style={styles.treeCardBody}>
+          {t('stats.repertoireTreeBody')}
+        </AppText>
+      </Pressable>
+
       <AppText variant="heading" style={styles.sectionTitle}>
         {t('stats.byTheme')}
       </AppText>
@@ -260,6 +271,8 @@ export function StatsScreen() {
 
 /** Hauteur max de la barre, hors libellé et compte. */
 const CALENDAR_BAR_HEIGHT = 56;
+/** Place réservée au compte au-dessus de la barre, même quand elle est à sa hauteur max. */
+const CALENDAR_COUNT_HEIGHT = 18;
 
 function CalendarDay({
   label,
@@ -383,7 +396,9 @@ const styles = StyleSheet.create({
     marginRight: Spacing.sm,
   },
   calendarTrack: {
-    height: CALENDAR_BAR_HEIGHT,
+    // + la hauteur du compte : sinon, quand la barre atteint sa hauteur max,
+    // le compte au-dessus n'a plus de place et se retrouve tronqué.
+    height: CALENDAR_BAR_HEIGHT + CALENDAR_COUNT_HEIGHT,
     alignItems: 'center',
     justifyContent: 'flex-end',
     marginTop: Spacing.xs,
@@ -401,6 +416,17 @@ const styles = StyleSheet.create({
   },
   metric: {
     flex: 1,
+  },
+  treeCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+    padding: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  treeCardBody: {
+    marginTop: Spacing.xs,
   },
   sectionTitle: {
     marginTop: Spacing.lg,

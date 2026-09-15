@@ -1,3 +1,4 @@
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -13,6 +14,12 @@ import { t } from '@/lib/i18n';
 // sinon leur tout premier montage (32 pièces d'un coup) charge chacune pour
 // la première fois en même temps, d'où l'apparition par vagues.
 preloadPieceImages();
+
+// L'app reste portrait par défaut ; seul l'écran de l'arbre de répertoire
+// déverrouille temporairement (voir TreeScreen) pour profiter du paysage.
+// Nécessite `orientation: "default"` dans app.json — un verrou "portrait"
+// natif y bloquerait cet appel au runtime.
+ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
 
 export default function RootLayout() {
   return (

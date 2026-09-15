@@ -51,6 +51,13 @@ REPERTOIRE = [
             ("Nc6", False),
             ("d4", True),
         ],
+        # Seuil global (15%) abaissé à 10% pour cette ouverture : fait entrer
+        # plus de branches secondaires (à partir du coup 6, après la tabiya
+        # fixe). N'ajoute PAS 1...d5 (Scandinave) : ce coup n'est pas soumis
+        # au seuil, il est exclu par construction (voir `entry` plus haut,
+        # qui fige 1...e5 sans interroger Lichess — l'Écossaise répond à
+        # 1...e5, pas à 1...d5, qui demanderait un répertoire séparé).
+        "popularity_threshold": 0.10,
     },
     {
         "name": "Caro-Kann",
@@ -119,6 +126,7 @@ def insert_opponent_replies(
     side: str,
     our_move_count: int,
     config: Config,
+    threshold: float,
 ) -> List[Tuple[chess.Board, str]]:
     """Une ligne par réponse adverse retenue (popularité réelle), à `board`
     (trait adverse). Renvoie (position après cette réponse, id de sa ligne).
@@ -128,7 +136,7 @@ def insert_opponent_replies(
     fen = board.fen()
     response = explorer.lookup(fen)
     replies = lichess.usable_replies(
-        response, config.repertoire_popularity_threshold, config.repertoire_min_games
+        response, threshold, config.repertoire_min_games
     )
     total = lichess.total_games(response)
     children = []
@@ -159,6 +167,7 @@ def expand_our_move(
     our_move_count: int,
     config: Config,
     visited: set,
+    threshold: float,
 ) -> None:
     """Insère notre coup à `board` (notre trait), puis les réponses adverses
     en dessous, une ligne chacune.
@@ -195,10 +204,12 @@ def expand_our_move(
     new_count = our_move_count + 1
 
     opponent_children = insert_opponent_replies(
-        explorer, database, board_after, our_node_id, side, new_count, config
+        explorer, database, board_after, our_node_id, side, new_count, config, threshold
     )
     for child_board, opp_node_id in opponent_children:
-        expand_our_move(explorer, database, child_board, side, opp_node_id, new_count, config, visited)
+        expand_our_move(
+            explorer, database, child_board, side, opp_node_id, new_count, config, visited, threshold
+        )
 
 
 def seed_entry(database: Any, spec: Dict[str, Any]) -> Tuple[chess.Board, Optional[str]]:
@@ -233,16 +244,25 @@ def build(
     explorer: LichessExplorer, database: Any, spec: Dict[str, Any], config: Config
 ) -> None:
     log.info("=== %s (%s) ===", spec["name"], spec["side"])
+    threshold = spec.get("popularity_threshold", config.repertoire_popularity_threshold)
     board, parent_id = seed_entry(database, spec)
     our_move_count = sum(1 for _, is_ours in spec["entry"] if is_ours)
     visited: set = set()
 
     opponent_children = insert_opponent_replies(
-        explorer, database, board, parent_id, spec["side"], our_move_count, config
+        explorer, database, board, parent_id, spec["side"], our_move_count, config, threshold
     )
     for child_board, opp_node_id in opponent_children:
         expand_our_move(
-            explorer, database, child_board, spec["side"], opp_node_id, our_move_count, config, visited
+            explorer,
+            database,
+            child_board,
+            spec["side"],
+            opp_node_id,
+            our_move_count,
+            config,
+            visited,
+            threshold,
         )
 
 
@@ -316,13 +336,19 @@ def run() -> int:
     sql_out = None
     if "--sql-out" in sys.argv:
         sql_out = sys.argv[sys.argv.index("--sql-out") + 1]
+    only = None
+    if "--only" in sys.argv:
+        only = sys.argv[sys.argv.index("--only") + 1]
+    specs = [s for s in REPERTOIRE if only is None or s["name"] == only]
+    if only and not specs:
+        raise SystemExit(f"--only {only!r} ne correspond à aucun répertoire connu.")
 
     with LichessExplorer(
         config.lichess_api_token, config.lichess_speeds, config.lichess_rating_band
     ) as explorer:
         if dry_run or sql_out:
             sink = MemorySink()
-            for spec in REPERTOIRE:
+            for spec in specs:
                 build(explorer, sink, spec, config)
             finalize_book_ends(sink.rows)
 
@@ -337,7 +363,7 @@ def run() -> int:
 
         with Supabase(config) as database:
             database.owner_id  # échoue tôt si app_owner n'est pas renseignée
-            for spec in REPERTOIRE:
+            for spec in specs:
                 build(explorer, database, spec, config)
 
     return 0

@@ -1,13 +1,15 @@
+import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { Chessboard, type BoardMove } from '@/chess/Chessboard';
 import { playMove, type Position } from '@/chess/play';
 import { ReplayControls } from '@/components/ReplayControls';
-import { AppText, Button, Chip, EmptyState, Loader, Panel, Screen } from '@/components/ui';
+import { AppText, Button, EmptyState, Loader, Panel, Screen, Select } from '@/components/ui';
 import { fetchRepertoireTree, saveRepertoireReview } from '@/features/repertoire/api';
 import {
   ROOT,
+  ancestorPath,
   groupByParent,
   pickMyNode,
   pickOpponentNode,
@@ -25,8 +27,15 @@ const MAX_BOARD_SIZE = 440;
 const OPPONENT_DELAY_MS = 450;
 
 type Color = 'white' | 'black';
+type Mode = Color | 'random';
 type Phase = 'walking' | 'wrong' | 'done';
 type TreeStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+/** Tire un camp pour la prochaine carte. Fixe si `mode` est un camp donné. */
+function rollColor(mode: Mode): Color {
+  if (mode !== 'random') return mode;
+  return Math.random() < 0.5 ? 'white' : 'black';
+}
 
 interface WrongInfo {
   target: RepertoireNode;
@@ -45,6 +54,14 @@ function buildScript(path: RepertoireNode[]): Map<string, RepertoireNode> {
 }
 
 export function RepertoireScreen() {
+  // Venue d'un tap sur une branche de l'arbre : rejoue cette carte précise
+  // plutôt que de tirer une ligne depuis le début.
+  const params = useLocalSearchParams<{ nodeId?: string; side?: string }>();
+  const startNodeId = params.nodeId;
+  const startSide: Color = params.side === 'black' ? 'black' : 'white';
+  const appliedStartRef = useRef(false);
+
+  const [mode, setMode] = useState<Mode>(startNodeId ? startSide : 'white');
   const [color, setColor] = useState<Color | null>(null);
   const [nodes, setNodes] = useState<RepertoireNode[]>([]);
   const [treeStatus, setTreeStatus] = useState<TreeStatus>('idle');
@@ -96,6 +113,29 @@ export function RepertoireScreen() {
         setTreeStatus('error');
       });
   }, []);
+
+  // Première carte au montage, sur le camp par défaut ("Blancs") : le menu
+  // déroulant a toujours une valeur, pas de bouton à taper avant de démarrer.
+  // Volontairement une seule fois : le Select et "Suivante" relancent une
+  // carte explicitement, cet effet ne doit pas les redéclencher.
+  useEffect(() => {
+    pickColor(startNodeId ? startSide : rollColor(mode));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Une fois l'arbre du camp visé chargé, saute directement à la carte tapée
+  // dans l'arbre : force les mêmes réponses adverses que la vraie ligne pour
+  // amener le plateau jusqu'à son parent, sans passer par tout le reste.
+  useEffect(() => {
+    if (!startNodeId || appliedStartRef.current || treeStatus !== 'ready' || nodes.length === 0) {
+      return;
+    }
+    appliedStartRef.current = true;
+    const chain = ancestorPath(nodes, startNodeId);
+    setScriptedPicks(buildScript(chain));
+    setPath(chain);
+    setPhase('walking');
+  }, [startNodeId, treeStatus, nodes]);
 
   // Avance le parcours tout seul tant que c'est le tour de l'adversaire ;
   // s'arrête (en attente d'un coup) dès que c'est le mien, ou termine la
@@ -169,13 +209,20 @@ export function RepertoireScreen() {
   }, [path]);
 
   const handleNext = useCallback(() => {
+    // Camp aléatoire : chaque nouvelle carte retire un camp, pas seulement
+    // une nouvelle réponse adverse — on repart via pickColor (recharge
+    // l'arbre si besoin) plutôt que du simple reset ci-dessous.
+    if (mode === 'random') {
+      pickColor(rollColor('random'));
+      return;
+    }
     setScriptedPicks(null);
     setPath([]);
     setPhase('walking');
     setWrongInfo(null);
     setDetailsOpen(true);
     setVariantOpen(false);
-  }, []);
+  }, [mode, pickColor]);
 
   // Position atteinte en suivant la ligne jouée : chaque nœud ne stocke que
   // la position d'avant son propre coup, donc on les rejoue depuis le début.
@@ -213,20 +260,26 @@ export function RepertoireScreen() {
 
   return (
     <Screen scroll>
-      <View style={styles.colorPicker}>
-        <Chip
-          label={t('openings.chooseWhite')}
-          selected={color === 'white'}
-          onPress={() => pickColor('white')}
-          style={styles.colorChip}
-        />
-        <Chip
-          label={t('openings.chooseBlack')}
-          selected={color === 'black'}
-          onPress={() => pickColor('black')}
-          style={styles.colorChip}
-        />
-      </View>
+      <Select
+        label={t('openings.colorLabel')}
+        value={mode}
+        options={[
+          { value: 'white', label: t('openings.chooseWhite') },
+          { value: 'black', label: t('openings.chooseBlack') },
+          { value: 'random', label: t('openings.chooseRandom') },
+        ]}
+        onChange={(next) => {
+          setMode(next);
+          pickColor(rollColor(next));
+        }}
+      />
+      {mode === 'random' && color ? (
+        <AppText muted variant="label" style={styles.playingAs}>
+          {t('openings.playingAs', {
+            color: t(color === 'white' ? 'openings.chooseWhite' : 'openings.chooseBlack'),
+          })}
+        </AppText>
+      ) : null}
 
       <View
         style={[
@@ -377,14 +430,8 @@ function Outcome({
 }
 
 const styles = StyleSheet.create({
-  colorPicker: {
-    flexDirection: 'row',
-    columnGap: Spacing.sm,
-    paddingTop: Spacing.sm,
-  },
-  colorChip: {
-    flex: 1,
-    marginRight: 0,
+  playingAs: {
+    marginTop: Spacing.xs,
   },
   boardWrapper: {
     alignItems: 'center',

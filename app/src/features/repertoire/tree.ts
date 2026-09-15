@@ -49,3 +49,53 @@ export function pickOpponentNode(children: RepertoireNode[]): RepertoireNode {
   }
   return children[children.length - 1];
 }
+
+/** Ancêtres de `targetId` (racine en premier), le nœud cible exclu. */
+export function ancestorPath(nodes: RepertoireNode[], targetId: string): RepertoireNode[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const chain: RepertoireNode[] = [];
+  let currentId = byId.get(targetId)?.parent_node_id ?? null;
+  while (currentId) {
+    const node = byId.get(currentId);
+    if (!node) break;
+    chain.unshift(node);
+    currentId = node.parent_node_id;
+  }
+  return chain;
+}
+
+export type FsrsStatus = 'new' | 'due' | 'learned';
+
+function ownStatus(node: RepertoireNode): FsrsStatus {
+  if (!node.fsrs_due_at) return 'new';
+  return new Date(node.fsrs_due_at).getTime() <= Date.now() ? 'due' : 'learned';
+}
+
+const STATUS_RANK: Record<FsrsStatus, number> = { learned: 0, new: 1, due: 2 };
+const RANK_STATUS: FsrsStatus[] = ['learned', 'new', 'due'];
+
+/**
+ * Statut FSRS « effectif » de chaque coup à nous : une erreur (ou une carte
+ * jamais revue) plus haut dans la variante rend le reste non maîtrisé, même
+ * si le nœud lui-même a sa propre échéance lointaine — sinon un enfant peut
+ * s'afficher acquis juste après un parent en échec, ce qui n'a pas de sens
+ * puisqu'on ne l'atteint qu'en ratant le parent.
+ */
+export function computeEffectiveStatuses(nodes: RepertoireNode[]): Map<string, FsrsStatus> {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const cache = new Map<string, FsrsStatus>();
+
+  function resolve(node: RepertoireNode): FsrsStatus {
+    const cached = cache.get(node.id);
+    if (cached) return cached;
+    let rank = node.popularity === null ? STATUS_RANK[ownStatus(node)] : STATUS_RANK.learned;
+    const parent = node.parent_node_id ? byId.get(node.parent_node_id) : undefined;
+    if (parent) rank = Math.max(rank, STATUS_RANK[resolve(parent)]);
+    const status = RANK_STATUS[rank];
+    cache.set(node.id, status);
+    return status;
+  }
+
+  for (const node of nodes) resolve(node);
+  return cache;
+}

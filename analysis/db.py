@@ -140,3 +140,19 @@ class Supabase:
             response.raise_for_status()
             self._book_cache[key] = bool(response.json())
         return self._book_cache[key]
+
+    def upsert_repertoire_node(self, row: Dict[str, Any]) -> str:
+        """Insère ou met à jour un noeud de répertoire par (fen, move_san).
+
+        Rejouable : relancer analysis/repertoire.py après avoir changé
+        LICHESS_RATING_BAND réécrit les lignes existantes (popularité,
+        is_book_end) au lieu de les dupliquer.
+        """
+        response = self._client.post(
+            "/repertoire_nodes",
+            json=[row],
+            params={"on_conflict": "fen,move_san"},
+            headers={"Prefer": "resolution=merge-duplicates,return=representation"},
+        )
+        response.raise_for_status()
+        return response.json()[0]["id"]

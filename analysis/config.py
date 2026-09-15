@@ -16,6 +16,11 @@ def _csv(name: str, default: str) -> tuple:
     return tuple(part.strip() for part in raw.split(",") if part.strip())
 
 
+def _float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    return float(raw) if raw else default
+
+
 def _api_url(raw: str) -> str:
     """Valide l'URL de l'API du projet Supabase.
 
@@ -77,6 +82,17 @@ class Config:
     # On ignore l'ouverture : les écarts y sont dus au répertoire, pas au calcul.
     skip_first_plies: int
 
+    # Phase 2 — génération du répertoire d'ouvertures (analysis/repertoire.py,
+    # script à part, absent du pipeline GitHub Actions). Le jeton n'est pas un
+    # secret applicatif comme SUPABASE_SERVICE_ROLE_KEY : sans scope, il ne
+    # donne accès qu'à des statistiques publiques.
+    lichess_api_token: str
+    lichess_rating_band: int
+    lichess_speeds: tuple
+    repertoire_popularity_threshold: float
+    repertoire_min_games: int
+    repertoire_max_plies: int
+
     @staticmethod
     def from_env() -> "Config":
         url = os.environ.get("SUPABASE_URL", "")
@@ -100,4 +116,12 @@ class Config:
             solution_plies=_int("SOLUTION_PLIES", 12),
             max_games_per_run=_int("MAX_GAMES_PER_RUN", 40),
             skip_first_plies=_int("SKIP_FIRST_PLIES", 8),
+            lichess_api_token=os.environ.get("LICHESS_API_TOKEN", "").strip(),
+            lichess_rating_band=_int("LICHESS_RATING_BAND", 0),
+            lichess_speeds=_csv("LICHESS_SPEEDS", "rapid"),
+            repertoire_popularity_threshold=_float(
+                "REPERTOIRE_POPULARITY_THRESHOLD", 0.15
+            ),
+            repertoire_min_games=_int("REPERTOIRE_MIN_GAMES", 200),
+            repertoire_max_plies=_int("REPERTOIRE_MAX_PLIES", 8),
         )

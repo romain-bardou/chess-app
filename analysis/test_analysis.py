@@ -12,6 +12,7 @@ import chess
 
 import chesscom
 import classify
+import lichess
 import main
 from classify import Evaluation
 from config import _api_url
@@ -47,6 +48,42 @@ def test_thresholds_match_lichess() -> None:
 def test_api_url_normalises_whitespace_and_trailing_slash() -> None:
     assert _api_url("  https://abc.supabase.co/ \n") == "https://abc.supabase.co"
     assert _api_url("https://abc.supabase.co") == "https://abc.supabase.co"
+
+
+def _explorer_response(*moves, draws=0):
+    total_white = sum(m[1] for m in moves)
+    return {
+        "white": total_white,
+        "draws": draws,
+        "black": 0,
+        "moves": [
+            {"san": san, "white": n, "draws": 0, "black": 0} for san, n in moves
+        ],
+    }
+
+
+def test_top_move_picks_the_most_played() -> None:
+    response = _explorer_response(("exd4", 900), ("d6", 100))
+    assert lichess.top_move(response)["san"] == "exd4"
+    assert lichess.top_move(_explorer_response()) is None
+
+
+def test_popular_replies_filters_by_share_of_the_total() -> None:
+    # Écossaise à 750 elo (aperçu réel) : exd4 domine, mais d6 dépasse aussi
+    # le seuil de 5 % — les deux doivent être couverts.
+    response = _explorer_response(("exd4", 37), ("d6", 16), ("Nf6", 14), ("f6", 7))
+    kept = {m["san"] for m in lichess.popular_replies(response, threshold=0.05)}
+    assert kept == {"exd4", "d6", "Nf6", "f6"}
+    assert lichess.popular_replies(response, threshold=0.20) == [
+        m for m in response["moves"] if m["san"] in ("exd4", "d6")
+    ]
+
+
+def test_usable_replies_requires_a_minimum_sample_size() -> None:
+    response = _explorer_response(("a4", 3), ("h4", 2))
+    # 5 parties : n'importe quel seuil serait statistiquement creux.
+    assert lichess.usable_replies(response, threshold=0.05, min_games=200) == []
+    assert lichess.usable_replies(response, threshold=0.05, min_games=5) != []
 
 
 def test_api_url_rejects_a_dashboard_url() -> None:

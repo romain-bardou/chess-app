@@ -51,16 +51,27 @@ class Engine:
             time=self._config.movetime_ms / 1000.0, depth=self._config.depth
         )
 
-    def analyse(self, board: chess.Board, multipv: int = 1) -> List[Candidate]:
+    @property
+    def _deep_limit(self) -> chess.engine.Limit:
+        return chess.engine.Limit(
+            time=self._config.verify_movetime_ms / 1000.0,
+            depth=self._config.verify_depth,
+        )
+
+    def analyse(
+        self, board: chess.Board, multipv: int = 1, deep: bool = False
+    ) -> List[Candidate]:
         """Coups candidats classés du meilleur au moins bon.
 
+        `deep` : limite de vérification (plus profonde, plus lente).
         Liste vide si la position est terminale (rien à jouer).
         """
         assert self._engine is not None, "Engine utilisé hors du context manager"
         if board.is_game_over(claim_draw=False):
             return []
 
-        infos = self._engine.analyse(board, self._limit, multipv=multipv)
+        limit = self._deep_limit if deep else self._limit
+        infos = self._engine.analyse(board, limit, multipv=multipv)
         if isinstance(infos, dict):  # python-chess renvoie un dict si multipv=None
             infos = [infos]
 

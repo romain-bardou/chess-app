@@ -68,6 +68,13 @@ class Config:
     # gratuites sont limitées.
     movetime_ms: int
     depth: int
+    # Vérification de la fin d'un puzzle (solution.py) : une seule analyse par
+    # candidat, donc on peut se permettre plus de profondeur que pour l'analyse
+    # de chaque coup de la partie.
+    verify_movetime_ms: int
+    verify_depth: int
+    # Demi-coups joués au-delà du gain pour vérifier qu'il tient.
+    verify_plies: int
     multipv: int
     threads: int
     hash_mb: int
@@ -109,6 +116,9 @@ class Config:
             import_time_classes=_csv("IMPORT_TIME_CLASSES", "rapid"),
             movetime_ms=_int("ENGINE_MOVETIME_MS", 400),
             depth=_int("ENGINE_DEPTH", 14),
+            verify_movetime_ms=_int("VERIFY_MOVETIME_MS", 1500),
+            verify_depth=_int("VERIFY_DEPTH", 20),
+            verify_plies=_int("VERIFY_PLIES", 4),
             multipv=_int("ENGINE_MULTIPV", 4),
             threads=_int("ENGINE_THREADS", 2),
             hash_mb=_int("ENGINE_HASH_MB", 128),

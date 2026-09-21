@@ -17,7 +17,7 @@ import main
 from classify import Evaluation
 from config import _api_url
 from cook import _back_rank_mate, _fork, _line_relations, _smothered_mate, cook
-from solution import build_solution
+from solution import _is_sound_defence, build_solution
 
 
 def _kinds(board: chess.Board, color: chess.Color) -> set:
@@ -259,6 +259,140 @@ def test_solution_refuses_a_line_without_material_gain() -> None:
 def test_solution_stops_at_the_ply_budget() -> None:
     board = chess.Board("4k3/8/8/3q4/8/8/8/3RK3 w - - 0 1")
     assert build_solution(board, _uci(board, ["Rd4", "Ke7"]), max_plies=0) is None
+
+
+class _FakeCandidate:
+    def __init__(self, move, winning_chances, pv=()) -> None:
+        self.move = move
+        self.winning_chances = winning_chances
+        self.pv = list(pv)
+
+
+class _FakeUnsoundEngine:
+    """L'adversaire a toujours un bien meilleur coup que celui testé."""
+
+    def analyse(self, board, multipv=1, deep=False):
+        return [_FakeCandidate(chess.Move.null(), 0.9)]
+
+    def evaluate_move(self, board, move):
+        return _FakeCandidate(move, -0.9)
+
+
+class _FakeSoundEngine:
+    """Le coup testé est celui que le moteur aurait lui-même choisi."""
+
+    def __init__(self, best_move) -> None:
+        self._best_move = best_move
+
+    def analyse(self, board, multipv=1, deep=False):
+        return [_FakeCandidate(self._best_move, 0.5)]
+
+    def evaluate_move(self, board, move):
+        return _FakeCandidate(move, 0.5)
+
+
+class _FakeVerifyEngine:
+    """Défense correcte ; l'analyse profonde renvoie l'évaluation et la ligne
+    fournies, et garde trace de son appel."""
+
+    def __init__(self, defence, final_wc, final_pv) -> None:
+        self._defence = defence
+        self._final = _FakeCandidate(
+            final_pv[0] if final_pv else chess.Move.null(), final_wc, final_pv
+        )
+        self.deep_calls = 0
+
+    def analyse(self, board, multipv=1, deep=False):
+        if deep:
+            self.deep_calls += 1
+            return [self._final]
+        return [_FakeCandidate(self._defence, 0.5)]
+
+    def evaluate_move(self, board, move):
+        return _FakeCandidate(move, 0.5)
+
+
+def test_is_sound_defence_rejects_a_move_with_a_much_better_alternative() -> None:
+    board = chess.Board("4k3/8/8/8/8/8/8/3RK3 b - - 0 1")
+    move = chess.Move.from_uci("e8e7")
+    assert not _is_sound_defence(_FakeUnsoundEngine(), board, move)
+
+
+def test_is_sound_defence_accepts_the_engines_own_best_move() -> None:
+    board = chess.Board("4k3/8/8/8/8/8/8/3RK3 b - - 0 1")
+    move = chess.Move.from_uci("e8e7")
+    assert _is_sound_defence(_FakeSoundEngine(move), board, move)
+
+
+def test_solution_drops_a_line_whose_only_confirmed_defence_is_unsound() -> None:
+    # Rxd5 gagne la dame, mais le moteur factice affirme qu'une bien
+    # meilleure défense existait que Ke7 : sans elle pour confirmer le gain,
+    # la ligne ne peut pas être retenue.
+    board = chess.Board("4k3/8/8/3q4/8/8/8/3RK3 w - - 0 1")
+    pv = _uci(board, ["Rxd5", "Ke7"])
+    assert build_solution(board, pv, engine=_FakeUnsoundEngine()) is None
+
+
+def test_solution_keeps_a_line_whose_defence_matches_the_engines_best() -> None:
+    board = chess.Board("4k3/8/8/3q4/8/8/8/3RK3 w - - 0 1")
+    pv = _uci(board, ["Rxd5", "Ke7"])
+    found = build_solution(board, pv, engine=_FakeSoundEngine(pv[1]))
+    assert found is not None
+    assert found.gain == {"type": "material", "value": 9}
+
+
+def _verified_solution(final_wc, final_sans, start_wc=0.5):
+    # Rxd5 Ke7 : la tour a gagné la dame, position de repos au trait des blancs.
+    board = chess.Board("4k3/8/8/3q4/8/8/8/3RK3 w - - 0 1")
+    pv = _uci(board, ["Rxd5", "Ke7"])
+    rest = board.copy()
+    for move in pv:
+        rest.push(move)
+    engine = _FakeVerifyEngine(pv[1], final_wc, _uci(rest, final_sans))
+    found = build_solution(board, pv, engine=engine, start_wc=start_wc)
+    return found, engine
+
+
+def test_solution_verifies_the_rest_point_with_a_deep_analysis() -> None:
+    found, engine = _verified_solution(0.5, ["Rd1", "Kf7"])
+    assert found is not None
+    assert found.gain == {"type": "material", "value": 9}
+    assert engine.deep_calls == 1
+
+
+def test_solution_drops_a_gain_that_leaves_a_lost_position() -> None:
+    # Matériel gagné, mais la position finale est bien pire qu'au départ.
+    found, _engine = _verified_solution(-0.4, ["Rd1", "Kf7"])
+    assert found is None
+
+
+def test_solution_ignores_the_reference_eval_when_none_is_given() -> None:
+    found, _engine = _verified_solution(-0.4, ["Rd1", "Kf7"], start_wc=None)
+    assert found is not None
+
+
+def test_solution_drops_a_gain_given_back_within_the_lookahead() -> None:
+    # Rd6 Kxd6 : la tour est reprise dans les deux coups qui suivent.
+    found, _engine = _verified_solution(0.5, ["Rd6", "Kxd6"])
+    assert found is None
+
+
+def test_solution_keeps_a_gain_when_the_lookahead_ends_on_a_solver_move() -> None:
+    # Ligne coupée avant la réponse adverse : rien à comparer sur le matériel.
+    found, _engine = _verified_solution(0.5, ["Rd1"])
+    assert found is not None
+
+
+def test_solution_refuses_a_terminal_rest_position() -> None:
+    board = chess.Board("4k3/8/8/3q4/8/8/8/3RK3 w - - 0 1")
+    pv = _uci(board, ["Rxd5", "Ke7"])
+
+    class _Terminal(_FakeVerifyEngine):
+        def analyse(self, board, multipv=1, deep=False):
+            return [] if deep else super().analyse(board, multipv, deep)
+
+    engine = _Terminal(pv[1], 0.5, [])
+    assert build_solution(board, pv, engine=engine, start_wc=0.5) is None
 
 
 def test_previous_move_carries_the_position_before_it() -> None:

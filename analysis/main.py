@@ -159,7 +159,14 @@ def evaluate_position(
 
     # Un puzzle doit se terminer sur un gain vérifiable (matériel ou mat), pas
     # sur un simple « meilleur coup » : sans ça, la carte est inrévisable.
-    solution = build_solution(board, best.pv, config.solution_plies)
+    solution = build_solution(
+        board,
+        best.pv,
+        config.solution_plies,
+        engine=engine,
+        start_wc=best.winning_chances,
+        lookahead_plies=config.verify_plies,
+    )
     if solution is None:
         return None
 

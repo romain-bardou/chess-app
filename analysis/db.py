@@ -6,6 +6,7 @@ explicitement à partir de la table `app_owner`.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -106,6 +107,81 @@ class Supabase:
             headers={"Prefer": "return=minimal"},
         )
         response.raise_for_status()
+
+    # ------------------------------------------------------------------
+    def games_to_reanalyze(self, limit: int) -> List[Dict[str, Any]]:
+        """Parties déjà analysées mais pas encore repassées sous la logique
+        courante, les plus anciennes d'abord.
+
+        Indépendant de `analyzed` : une partie reste `analyzed = true`, seul
+        `reanalyzed_at` avance, pour ne jamais interférer avec le pipeline
+        quotidien qui, lui, ne regarde que les parties jamais vues.
+        """
+        response = self._client.get(
+            "/games",
+            params={
+                "select": "id,pgn,color_played,chess_com_url,played_at",
+                "analyzed": "eq.true",
+                "reanalyzed_at": "is.null",
+                "order": "played_at.asc",
+                "limit": limit,
+            },
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def mark_reanalyzed(self, game_id: str) -> None:
+        response = self._client.patch(
+            "/games",
+            params={"id": f"eq.{game_id}"},
+            json={"reanalyzed_at": datetime.now(timezone.utc).isoformat()},
+            headers={"Prefer": "return=minimal"},
+        )
+        response.raise_for_status()
+
+    def upsert_mistakes_preserving_fsrs(self, rows: List[Dict[str, Any]]) -> None:
+        """Comme `insert_mistakes`, mais remplace le contenu d'une carte déjà
+        en base au lieu de l'ignorer.
+
+        `merge-duplicates` ne touche que les colonnes présentes dans `rows` :
+        `fsrs_card` et les colonnes `fsrs_*` n'y figurent jamais (elles ne
+        sortent pas de `evaluate_position`), donc une carte déjà révisée garde
+        son historique FSRS intact même si sa solution change sous elle.
+        """
+        if not rows:
+            return
+        response = self._client.post(
+            "/mistakes",
+            json=rows,
+            params={"on_conflict": "game_id,ply_number"},
+            headers={"Prefer": "return=minimal,resolution=merge-duplicates"},
+        )
+        response.raise_for_status()
+
+    def delete_stale_unseen_mistakes(
+        self, game_id: str, kept_plies: List[int]
+    ) -> int:
+        """Supprime les cartes jamais révisées d'une partie que la réanalyse
+        n'a pas reproduites. Retourne le nombre supprimé.
+
+        Une carte déjà vue (`times_seen > 0`) est conservée quoi qu'il arrive :
+        elle porte un historique FSRS que l'utilisateur ne doit pas perdre à
+        cause d'un changement de logique.
+        """
+        params = {
+            "game_id": f"eq.{game_id}",
+            "times_seen": "eq.0",
+            "select": "id",
+        }
+        if kept_plies:
+            params["ply_number"] = f"not.in.({','.join(str(p) for p in kept_plies)})"
+        response = self._client.delete(
+            "/mistakes",
+            params=params,
+            headers={"Prefer": "return=representation"},
+        )
+        response.raise_for_status()
+        return len(response.json())
 
     def insert_mistakes(self, rows: List[Dict[str, Any]]) -> None:
         if not rows:

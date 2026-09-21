@@ -8,7 +8,7 @@
 import { createEmptyCard, fsrs, generatorParameters, Rating } from 'ts-fsrs';
 import type { Card, CardInput, Grade } from 'ts-fsrs';
 
-import type { Mistake, RepertoireNode, StoredFsrsCard } from '@/lib/types';
+import type { Mistake, RepertoireNode, ReviewBox, StoredFsrsCard } from '@/lib/types';
 
 /** Paramètres par défaut de ts-fsrs : une seule mémoire pour l'instant. */
 const scheduler = fsrs(generatorParameters());
@@ -50,6 +50,20 @@ export function gradeAttempt(
   if (ratio < EASY_RATIO) return Rating.Easy;
   if (ratio <= HARD_RATIO) return Rating.Good;
   return Rating.Hard;
+}
+
+/**
+ * Boîte suivante après une tentative — sur `mistakes` (par carte) comme sur
+ * `repertoire_nodes` (par fin de variante). Voir 010_mistake_box.sql et
+ * 011_repertoire_box.sql.
+ *
+ * Un échec renvoie toujours en `unvalidated`, quelle que soit la boîte de
+ * départ. Une réussite fait grimper d'un cran, sauf depuis `mastered` qui n'a
+ * rien au-dessus.
+ */
+export function nextBox(current: ReviewBox, correct: boolean): ReviewBox {
+  if (!correct) return 'unvalidated';
+  return current === 'validated' || current === 'mastered' ? 'mastered' : 'validated';
 }
 
 export const GRADE_LABELS: Record<Grade, 'Again' | 'Hard' | 'Good' | 'Easy'> = {
@@ -108,6 +122,7 @@ export interface ReviewOutcome {
     times_seen: number;
     times_correct: number;
     times_incorrect: number;
+    box: ReviewBox;
   };
 }
 
@@ -143,6 +158,7 @@ export function reviewMistake(
       times_seen: mistake.times_seen + 1,
       times_correct: mistake.times_correct + (correct ? 1 : 0),
       times_incorrect: mistake.times_incorrect + (correct ? 0 : 1),
+      box: nextBox(mistake.box, correct),
     },
   };
 }

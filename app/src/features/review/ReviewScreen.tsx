@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { Chessboard, type BoardMove } from '@/chess/Chessboard';
-import { uciSquares } from '@/chess/play';
+import { playMove, uciSquares } from '@/chess/play';
 import { ReplayControls } from '@/components/ReplayControls';
 import {
   AppText,
@@ -13,7 +13,7 @@ import {
   Panel,
   Screen,
 } from '@/components/ui';
-import { saveReview } from '@/features/review/api';
+import { saveReview, type BoxFilter } from '@/features/review/api';
 import { bestMoveSan } from '@/features/review/grading';
 import { useLineReplay, type LineReplay } from '@/features/review/useLineReplay';
 import { usePuzzleRun } from '@/features/review/usePuzzleRun';
@@ -22,7 +22,9 @@ import { GRADE_LABELS, reviewMistake } from '@/lib/fsrs';
 import { t, translateTheme, type TranslationKey } from '@/lib/i18n';
 import {
   AUTO_PLAY_LINE,
+  REVIEW_BOX_FILTER,
   REVIEW_THEME_FILTER,
+  SHOW_HINT_ARROW,
   SHUFFLE_QUEUE,
   useStoredFlag,
   useStoredValue,
@@ -67,7 +69,8 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
   // Les cartes neuves arrivent groupées par partie, dans l'ordre des coups :
   // pratique pour revoir une partie, trop indicatif pour tester la mémoire.
   const [shuffle] = useStoredFlag(SHUFFLE_QUEUE, false);
-  const queue = useReviewQueue(theme, shuffle);
+  const [boxFilter] = useStoredValue(REVIEW_BOX_FILTER, '');
+  const queue = useReviewQueue(theme, shuffle, boxFilter as BoxFilter);
   const current = queue.current;
 
   const [phase, setPhase] = useState<Phase>('solving');
@@ -80,6 +83,7 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
   // Après une erreur, la variante attend le joueur ; ce réglage la déroule
   // tout de suite pour qui préfère voir la suite sans rien demander.
   const [autoPlayLine] = useStoredFlag(AUTO_PLAY_LINE, false);
+  const [showHintArrow] = useStoredFlag(SHOW_HINT_ARROW, true);
   // État (pas une ref) : `ElapsedLabel` en a besoin comme prop stable pour
   // faire tourner son propre chrono sans rerendre tout l'écran chaque
   // seconde — l'échiquier SVG est trop coûteux pour ça.
@@ -139,6 +143,18 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
     initialStep: replayLine.step,
   });
 
+  // Flèche pleine du coup attendu, seulement pour l'erreur au premier coup :
+  // les suivants suivent une ligne enregistrée, pas les coups acceptés.
+  // Cachée dès qu'on s'écarte de la position ratée (exploration, avance de la
+  // variante) — elle pointerait sur la mauvaise case.
+  const hintArrow = useMemo(() => {
+    if (!showHintArrow || phase !== 'wrong' || !current || !attempt) return null;
+    if (attempt.fen !== current.fen || replay.frame.fen !== current.fen) return null;
+    const expected = bestMoveSan(current.accepted_moves);
+    if (!expected) return null;
+    return playMove(current.fen, expected)?.lastMove ?? null;
+  }, [showHintArrow, phase, current, attempt, replay.frame.fen]);
+
   const handleMove = useCallback(
     (move: BoardMove) => {
       if (!current || phase !== 'solving') return;
@@ -191,12 +207,16 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
       };
       retrySaveRef.current = persist;
       persist();
+
+      // Pas résolu proprement : reste dans la file de cette session, sans
+      // attendre que FSRS la reprogramme à une date précise.
+      if (!correct) queue.requeue({ ...current, ...outcome.update });
     },
     // `run.play`/`run.fen`/`run.moveNumber` plutôt que `run` : l'objet que
     // rend `usePuzzleRun` est reconstruit à chaque rendu, ce qui donnerait à
     // `handleMove` une nouvelle référence à chaque fois et défairait la
     // mémoïsation de `Chessboard` pour rien.
-    [current, phase, run.play, run.fen, run.moveNumber, startedAt]
+    [current, phase, run.play, run.fen, run.moveNumber, startedAt, queue.requeue]
   );
 
   const { width } = useWindowDimensions();
@@ -285,6 +305,7 @@ export function ReviewScreen({ initialTheme = null }: { initialTheme?: string | 
           // brouillon : on y joue ce qu'on veut, des deux camps.
           interactive={phase === 'wrong' || (phase === 'solving' && !run.waiting)}
           lastMove={board.lastMove}
+          hintArrow={hintArrow}
           onMove={phase === 'wrong' ? replay.explore : handleMove}
         />
       </View>

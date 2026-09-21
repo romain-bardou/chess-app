@@ -34,6 +34,8 @@ export const Colors = {
   legal: 'rgba(59, 36, 18, 0.28)',
   /** Trace du dernier coup joué. */
   lastMove: 'rgba(204, 160, 60, 0.45)',
+  /** Flèche indiquant le coup attendu après une erreur. */
+  hintArrow: 'rgba(58, 90, 158, 0.75)',
 } as const;
 
 export const Spacing = {

@@ -220,10 +220,9 @@ function TreeNodeShape({
   const pct = node.popularity === null ? null : `${Math.round(node.popularity * 100)}%`;
   // Carte = un coup à nous : seuls ceux-là ont une échéance FSRS à rejouer.
   const isCard = node.popularity === null;
-  // "Maîtrisée" exige les deux : l'échéance FSRS est loin (status) ET la
-  // dernière atteinte de cette fin de variante s'est faite d'une traite,
-  // sans erreur ni Recommencer (clean, voir RepertoireScreen.tsx).
-  const mastered = node.is_book_end && status === 'learned' && node.clean;
+  // "Maîtrisée" = boîte `mastered` (réussie deux fois d'affilée depuis
+  // `validated`, voir RepertoireScreen.tsx / nextBox).
+  const mastered = node.is_book_end && node.box === 'mastered';
 
   return (
     <>

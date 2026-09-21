@@ -1,24 +1,23 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, EmptyState, Loader, Panel, Screen } from '@/components/ui';
-import { fetchDueForecast, fetchGlobalStats, fetchThemeStats } from '@/features/review/api';
+import { fetchOpeningsBoxStats } from '@/features/repertoire/api';
+import { fetchGlobalStats, fetchMistakeBoxStats, fetchThemeStats } from '@/features/review/api';
 import { useAuth } from '@/lib/auth';
 import { accuracy, formatPercent } from '@/lib/format';
-import { t, translateTheme } from '@/lib/i18n';
-import type { DueForecast, GlobalStats, ThemeStat } from '@/lib/types';
-import { Colors, Radius, Spacing } from '@/theme/atelier';
+import { t, translateTheme, type TranslationKey } from '@/lib/i18n';
+import type { BoxStats, GlobalStats, ThemeStat } from '@/lib/types';
+import { Colors, Radius, Spacing, Typography } from '@/theme/atelier';
 
-/** Dimanche en premier, comme le renvoie `Date#getDay`. */
-const WEEKDAY_LABELS = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
-
-/** Libellé court d'un jour, ex. « Auj. », « Dem. », « Lun. ». */
-function dayLabel(date: string, offset: number): string {
-  if (offset === 0) return t('stats.today');
-  if (offset === 1) return t('stats.tomorrow');
-  return WEEKDAY_LABELS[new Date(`${date}T00:00:00`).getDay()];
-}
+/** Ordre d'affichage des boîtes dans le graphique (voir `ReviewBox`). */
+const BOX_ORDER: { key: keyof BoxStats; labelKey: TranslationKey }[] = [
+  { key: 'new', labelKey: 'stats.boxNew' },
+  { key: 'unvalidated', labelKey: 'stats.boxUnvalidated' },
+  { key: 'validated', labelKey: 'stats.boxValidated' },
+  { key: 'mastered', labelKey: 'stats.boxMastered' },
+];
 
 /** Rangées visibles d'emblée dans « Par thème tactique » avant « Voir plus ». */
 const THEME_PREVIEW_COUNT = 6;
@@ -28,7 +27,8 @@ export function StatsScreen() {
   const { signOut } = useAuth();
   const [global, setGlobal] = useState<GlobalStats | null>(null);
   const [themes, setThemes] = useState<ThemeStat[]>([]);
-  const [forecast, setForecast] = useState<DueForecast | null>(null);
+  const [puzzleBoxStats, setPuzzleBoxStats] = useState<BoxStats | null>(null);
+  const [openingsBoxStats, setOpeningsBoxStats] = useState<BoxStats | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
   const [showAllThemes, setShowAllThemes] = useState(false);
@@ -36,14 +36,16 @@ export function StatsScreen() {
   const load = useCallback(async () => {
     setStatus('loading');
     try {
-      const [globalStats, themeStats, dueForecast] = await Promise.all([
+      const [globalStats, themeStats, mistakeBoxStats, openingsStats] = await Promise.all([
         fetchGlobalStats(),
         fetchThemeStats(),
-        fetchDueForecast(),
+        fetchMistakeBoxStats(),
+        fetchOpeningsBoxStats(),
       ]);
       setGlobal(globalStats);
       setThemes(themeStats);
-      setForecast(dueForecast);
+      setPuzzleBoxStats(mistakeBoxStats);
+      setOpeningsBoxStats(openingsStats);
       setStatus('ready');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -80,7 +82,7 @@ export function StatsScreen() {
     );
   }
 
-  if (!global || !forecast || global.cards === 0) {
+  if (!global || !puzzleBoxStats || !openingsBoxStats || global.cards === 0) {
     return (
       <Screen>
         <EmptyState
@@ -117,13 +119,6 @@ export function StatsScreen() {
     : attempted.slice(0, THEME_PREVIEW_COUNT);
   const hiddenCount = attempted.length - visibleAttempted.length;
 
-  const forecastMax = Math.max(
-    1,
-    forecast.overdue,
-    forecast.later,
-    ...forecast.days.map((day) => day.count)
-  );
-
   return (
     <Screen scroll>
       <AppText variant="title" style={styles.title}>
@@ -133,25 +128,12 @@ export function StatsScreen() {
       <Panel>
         <AppText variant="heading">{t('stats.overview')}</AppText>
         <View style={styles.metrics}>
+          <Metric label={t('stats.gamesAnalyzed')} value={String(global.games_analyzed)} />
           <Metric label={t('stats.cards')} value={String(global.cards)} />
-          <Metric label={t('stats.due')} value={String(global.due)} emphasize />
           <Metric
             label={t('stats.accuracy')}
             value={overall === null ? '—' : formatPercent(overall)}
           />
-        </View>
-        <View style={styles.metrics}>
-          <Metric
-            label={t('stats.attempts')}
-            value={String(global.correct + global.incorrect)}
-          />
-          <Metric
-            label={t('stats.gamesAnalyzed')}
-            value={String(global.games_analyzed)}
-          />
-          {/* Espaceur muet : aligne cette rangée de deux sur la grille à trois
-              colonnes de la rangée du dessus, sans nœud de texte vide. */}
-          <View style={styles.metric} />
         </View>
         {attempted.length > 0 ? (
           <AppText muted variant="label" style={styles.weakestTheme}>
@@ -161,41 +143,17 @@ export function StatsScreen() {
             })}
           </AppText>
         ) : null}
+        <AppText muted variant="label" style={styles.weakestTheme}>
+          {t('stats.openingsMastered', {
+            mastered: openingsBoxStats.mastered,
+            total: BOX_ORDER.reduce((sum, box) => sum + openingsBoxStats[box.key], 0),
+          })}
+        </AppText>
       </Panel>
 
       <Panel style={styles.panel}>
-        <AppText variant="heading">{t('stats.calendarTitle')}</AppText>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.calendar}>
-          {forecast.overdue > 0 ? (
-            <CalendarDay
-              label={t('stats.overdue')}
-              count={forecast.overdue}
-              maxCount={forecastMax}
-              overdue
-            />
-          ) : null}
-          {forecast.days.map((day, offset) => (
-            <CalendarDay
-              key={day.date}
-              label={dayLabel(day.date, offset)}
-              count={day.count}
-              maxCount={forecastMax}
-            />
-          ))}
-          {forecast.later > 0 ? (
-            <CalendarDay
-              label={t('stats.later')}
-              count={forecast.later}
-              maxCount={forecastMax}
-            />
-          ) : null}
-        </ScrollView>
-        <Button
-          label={t('stats.viewCategories')}
-          variant="secondary"
-          onPress={() => router.push('/categories')}
-          style={styles.viewCategories}
-        />
+        <AppText variant="heading">{t('stats.boxesTitle')}</AppText>
+        <BoxChart puzzles={puzzleBoxStats} openings={openingsBoxStats} />
       </Panel>
 
       <Pressable
@@ -268,48 +226,6 @@ export function StatsScreen() {
   );
 }
 
-/** Hauteur max de la barre, hors libellé et compte. */
-const CALENDAR_BAR_HEIGHT = 56;
-/** Place réservée au compte au-dessus de la barre, même quand elle est à sa hauteur max. */
-const CALENDAR_COUNT_HEIGHT = 18;
-
-function CalendarDay({
-  label,
-  count,
-  maxCount,
-  overdue = false,
-}: {
-  label: string;
-  count: number;
-  maxCount: number;
-  overdue?: boolean;
-}) {
-  const height = Math.max(2, (count / maxCount) * CALENDAR_BAR_HEIGHT);
-  return (
-    <View style={styles.calendarDay}>
-      <View style={styles.calendarTrack}>
-        {count > 0 ? (
-          <AppText muted variant="label">
-            {count}
-          </AppText>
-        ) : null}
-        <View
-          style={[
-            styles.calendarBar,
-            {
-              height,
-              backgroundColor: overdue ? Colors.danger : Colors.accent,
-            },
-          ]}
-        />
-      </View>
-      <AppText muted variant="label" style={styles.calendarLabel}>
-        {label}
-      </AppText>
-    </View>
-  );
-}
-
 function Metric({
   label,
   value,
@@ -322,10 +238,91 @@ function Metric({
 }) {
   return (
     <View style={styles.metric}>
-      <AppText variant="title" color={emphasize ? Colors.accent : undefined}>
+      <AppText
+        variant="title"
+        color={emphasize ? Colors.accent : undefined}
+        style={styles.metricValue}>
         {value}
       </AppText>
-      <AppText muted variant="label">
+      <AppText muted variant="label" style={styles.metricLabel}>
+        {label}
+      </AppText>
+    </View>
+  );
+}
+
+/** Hauteur max d'une colonne, hors compte au-dessus. */
+const BOX_CHART_BAR_HEIGHT = 56;
+/** Place réservée au compte, même quand la colonne atteint sa hauteur max. */
+const BOX_CHART_COUNT_HEIGHT = 18;
+
+/** Deux colonnes par boîte — puzzles et ouvertures — sur la même échelle. */
+function BoxChart({ puzzles, openings }: { puzzles: BoxStats; openings: BoxStats }) {
+  const max = Math.max(
+    1,
+    ...BOX_ORDER.map((box) => Math.max(puzzles[box.key], openings[box.key]))
+  );
+  const barHeight = (count: number) => Math.max(2, (count / max) * BOX_CHART_BAR_HEIGHT);
+
+  return (
+    <View>
+      <View style={styles.chartRow}>
+        {BOX_ORDER.map((box) => (
+          <View key={box.key} style={styles.chartGroup}>
+            <View style={styles.chartBars}>
+              <View style={styles.chartTrack}>
+                <ChartCount value={puzzles[box.key]} />
+                <View
+                  style={[
+                    styles.chartBar,
+                    { height: barHeight(puzzles[box.key]), backgroundColor: Colors.accent },
+                  ]}
+                />
+              </View>
+              <View style={styles.chartTrack}>
+                <ChartCount value={openings[box.key]} />
+                <View
+                  style={[
+                    styles.chartBar,
+                    { height: barHeight(openings[box.key]), backgroundColor: Colors.success },
+                  ]}
+                />
+              </View>
+            </View>
+            <AppText muted variant="label" style={styles.chartGroupLabel}>
+              {t(box.labelKey)}
+            </AppText>
+          </View>
+        ))}
+      </View>
+      <View style={styles.chartLegend}>
+        <ChartLegendItem color={Colors.accent} label={t('stats.legendPuzzles')} />
+        <ChartLegendItem color={Colors.success} label={t('stats.legendOpenings')} />
+      </View>
+    </View>
+  );
+}
+
+/** Compte au-dessus d'une colonne : police réduite d'un cran à 3 chiffres, et
+ * jamais de retour à la ligne — `chartTrack` n'a plus de largeur fixe pour ça. */
+function ChartCount({ value }: { value: number }) {
+  if (value === 0) return null;
+  return (
+    <AppText
+      muted
+      variant="label"
+      numberOfLines={1}
+      style={[styles.chartCount, value >= 100 && styles.chartCountSmall]}>
+      {value}
+    </AppText>
+  );
+}
+
+function ChartLegendItem({ color, label }: { color: string; label: string }) {
+  return (
+    <View style={styles.legendItem}>
+      <View style={[styles.legendDot, { backgroundColor: color }]} />
+      <AppText muted style={styles.legendLabel}>
         {label}
       </AppText>
     </View>
@@ -366,7 +363,7 @@ function ThemeRow({ row, onTrain }: { row: ThemeStat; onTrain: () => void }) {
         />
       </View>
       <AppText muted variant="label" style={styles.themeMeta}>
-        {t('stats.themeCards', { count: row.cards })} · {t('stats.due')} {row.due}
+        {t('stats.themeCards', { count: row.cards })} · {t('stats.themeMastered', { count: row.mastered })}
       </AppText>
     </Pressable>
   );
@@ -380,35 +377,6 @@ const styles = StyleSheet.create({
   panel: {
     marginTop: Spacing.md,
   },
-  viewCategories: {
-    alignSelf: 'flex-start',
-    marginTop: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.md,
-  },
-  calendar: {
-    marginTop: Spacing.sm,
-  },
-  calendarDay: {
-    alignItems: 'center',
-    width: 44,
-    marginRight: Spacing.sm,
-  },
-  calendarTrack: {
-    // + la hauteur du compte : sinon, quand la barre atteint sa hauteur max,
-    // le compte au-dessus n'a plus de place et se retrouve tronqué.
-    height: CALENDAR_BAR_HEIGHT + CALENDAR_COUNT_HEIGHT,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginTop: Spacing.xs,
-  },
-  calendarBar: {
-    width: 20,
-    borderRadius: Radius.sm,
-  },
-  calendarLabel: {
-    marginTop: Spacing.xs,
-  },
   metrics: {
     flexDirection: 'row',
     marginTop: Spacing.sm,
@@ -418,6 +386,68 @@ const styles = StyleSheet.create({
   },
   metric: {
     flex: 1,
+    alignItems: 'center',
+  },
+  metricValue: {
+    textAlign: 'center',
+  },
+  metricLabel: {
+    textAlign: 'center',
+  },
+  chartRow: {
+    flexDirection: 'row',
+    marginTop: Spacing.sm,
+  },
+  chartGroup: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  chartBars: {
+    flexDirection: 'row',
+    columnGap: Spacing.xs,
+  },
+  chartTrack: {
+    // + la hauteur du compte : sinon, quand la colonne atteint sa hauteur
+    // max, le compte au-dessus n'a plus de place et se retrouve tronqué.
+    height: BOX_CHART_BAR_HEIGHT + BOX_CHART_COUNT_HEIGHT,
+    // Pas de largeur fixe ici : à 3 chiffres, le compte est plus large que la
+    // barre (20) et ne doit pas se faire tasser en retour à la ligne.
+    minWidth: 20,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  chartBar: {
+    width: 20,
+    borderRadius: Radius.sm,
+  },
+  chartCount: {
+    flexShrink: 0,
+  },
+  chartCountSmall: {
+    fontSize: Typography.label.fontSize - 1,
+  },
+  chartGroupLabel: {
+    marginTop: Spacing.xs,
+    textAlign: 'center',
+  },
+  chartLegend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    columnGap: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    columnGap: 3,
+  },
+  legendDot: {
+    width: 7,
+    height: 7,
+    borderRadius: Radius.sm,
+  },
+  legendLabel: {
+    fontSize: 10,
   },
   treeCard: {
     backgroundColor: Colors.surface,

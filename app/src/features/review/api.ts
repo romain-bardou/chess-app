@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type {
-  DueForecast,
+  BoxStats,
   FsrsStateStats,
   GlobalStats,
   Mistake,
@@ -8,23 +8,50 @@ import type {
   ThemeStat,
 } from '@/lib/types';
 
-/** Nombre de jours à venir couverts par le calendrier de révision. */
-const FORECAST_DAYS = 10;
-
 /** Taille d'un lot de révision : au-delà, on rechargera. */
 const QUEUE_SIZE = 60;
 
 /**
- * Cartes dues, les plus en retard d'abord.
+ * Filtre de boîte pour la file de révision.
+ *
+ * `''` (tous) couvre new+unvalidated+validated — `mastered` n'apparaît que
+ * choisi explicitement, une carte comprise n'a plus rien à y faire.
+ */
+export type BoxFilter = '' | 'new' | 'unvalidated' | 'mastered';
+
+/**
+ * Cartes à réviser, les moins avancées d'abord (new, puis unvalidated, puis
+ * validated), les plus en retard d'abord à égalité de boîte.
+ *
+ * `new` et `unvalidated` n'ont pas encore d'espacement FSRS qui tienne : pas
+ * encore résolues une seule fois proprement, donc pas de raison de les caser
+ * à une date précise plutôt qu'une autre. Elles restent dans la file tant
+ * qu'elles n'ont pas été validées, indépendamment de `fsrs_due_at`. Seules
+ * `validated`/`mastered` respectent l'échéance FSRS.
  *
  * RLS restreint déjà la lecture à mes lignes : pas besoin de filtrer sur
  * `user_id` côté client.
  */
-export async function fetchDueMistakes(theme?: string | null): Promise<Mistake[]> {
-  let query = supabase
-    .from('mistakes')
-    .select('*')
-    .lte('fsrs_due_at', new Date().toISOString())
+export async function fetchDueMistakes(
+  theme?: string | null,
+  boxFilter: BoxFilter = ''
+): Promise<Mistake[]> {
+  const now = new Date().toISOString();
+  let query = supabase.from('mistakes').select('*');
+
+  if (boxFilter === 'new' || boxFilter === 'unvalidated') {
+    query = query.eq('box', boxFilter);
+  } else if (boxFilter === 'mastered') {
+    query = query.eq('box', 'mastered').lte('fsrs_due_at', now);
+  } else {
+    query = query.or(
+      `box.in.(new,unvalidated),and(box.eq.validated,fsrs_due_at.lte.${now})`
+    );
+  }
+
+  query = query
+    // Alphabétique = ordre voulu ici : new < unvalidated < validated.
+    .order('box', { ascending: true })
     .order('fsrs_due_at', { ascending: true })
     // Les cartes d'une partie sont insérées d'un bloc, donc à la même
     // échéance : sans second critère, leur ordre serait celui du hasard.
@@ -82,31 +109,14 @@ export async function fetchFsrsStateStats(): Promise<FsrsStateStats> {
   return stats;
 }
 
-/** Calendrier des prochaines échéances, jour par jour. */
-export async function fetchDueForecast(): Promise<DueForecast> {
-  const { data, error } = await supabase.from('mistakes').select('fsrs_due_at');
+/** Répartition des puzzles par boîte (voir `ReviewBox`), pour l'écran Stats. */
+export async function fetchMistakeBoxStats(): Promise<BoxStats> {
+  const { data, error } = await supabase.from('mistakes').select('box');
   if (error) throw error;
 
-  const dayMs = 24 * 60 * 60 * 1000;
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const windowEnd = new Date(startOfToday.getTime() + FORECAST_DAYS * dayMs);
-
-  const counts = new Array<number>(FORECAST_DAYS).fill(0);
-  let overdue = 0;
-  let later = 0;
-
-  for (const row of (data ?? []) as { fsrs_due_at: string }[]) {
-    const due = new Date(row.fsrs_due_at);
-    if (due < startOfToday) overdue += 1;
-    else if (due >= windowEnd) later += 1;
-    else counts[Math.floor((due.getTime() - startOfToday.getTime()) / dayMs)] += 1;
+  const stats: BoxStats = { new: 0, unvalidated: 0, validated: 0, mastered: 0 };
+  for (const row of (data ?? []) as { box: keyof BoxStats }[]) {
+    stats[row.box] += 1;
   }
-
-  const days = counts.map((count, offset) => ({
-    date: new Date(startOfToday.getTime() + offset * dayMs).toISOString().slice(0, 10),
-    count,
-  }));
-
-  return { overdue, days, later };
+  return stats;
 }

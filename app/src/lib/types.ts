@@ -50,6 +50,12 @@ export interface StoredFsrsCard {
   last_review?: string | null;
 }
 
+/**
+ * Boîte de progression, partagée par `mistakes` et `repertoire_nodes` (voir
+ * supabase/migrations/010_mistake_box.sql et 011_repertoire_box.sql).
+ */
+export type ReviewBox = 'new' | 'unvalidated' | 'validated' | 'mastered';
+
 export interface Mistake {
   id: string;
   game_id: string;
@@ -76,6 +82,7 @@ export interface Mistake {
   times_seen: number;
   times_correct: number;
   times_incorrect: number;
+  box: ReviewBox;
 }
 
 export interface ThemeStat {
@@ -85,6 +92,7 @@ export interface ThemeStat {
   correct: number;
   incorrect: number;
   due: number;
+  mastered: number;
 }
 
 export interface GlobalStats {
@@ -107,14 +115,15 @@ export interface FsrsStateStats {
   relearning: number;
 }
 
-/** Nombre de cartes dues, réparti par jour à venir. */
-export interface DueForecast {
-  /** Déjà dues (échéance passée). */
-  overdue: number;
-  /** `date` au format `YYYY-MM-DD`, en heure locale. */
-  days: { date: string; count: number }[];
-  /** Dues après la fenêtre couverte par `days`. */
-  later: number;
+/**
+ * Répartition par boîte (voir `ReviewBox`) — pour `mistakes` comme pour les
+ * fins de variante de `repertoire_nodes`.
+ */
+export interface BoxStats {
+  new: number;
+  unvalidated: number;
+  validated: number;
+  mastered: number;
 }
 
 /**
@@ -139,8 +148,11 @@ export interface RepertoireNode {
   /** Contrairement à `mistakes`, pas de défaut en base : nul avant la première révision. */
   fsrs_due_at: string | null;
   fsrs_card: StoredFsrsCard | null;
-  /** Vrai seulement si la dernière fois que cette fin de variante a été
-   * atteinte, ce fut d'une traite, sans erreur ni Recommencer. */
-  clean: boolean;
+  /**
+   * Boîte de la fin de variante (`is_book_end`) : voir `ReviewBox`. N'a de
+   * sens que sur les feuilles — les nœuds intermédiaires la portent sans
+   * qu'elle soit lue.
+   */
+  box: ReviewBox;
   created_at: string;
 }

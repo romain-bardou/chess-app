@@ -30,7 +30,9 @@ import Animated, {
 import Svg, {
   Circle,
   Defs,
+  Line,
   LinearGradient,
+  Polygon,
   Rect,
   Stop,
   Text as SvgText,
@@ -71,6 +73,8 @@ interface ChessboardProps {
   size: number;
   interactive?: boolean;
   lastMove?: { from: Square; to: Square } | null;
+  /** Coup à suggérer par une flèche, quand le joueur vient de se tromper. */
+  hintArrow?: { from: Square; to: Square } | null;
   onMove?: (move: BoardMove) => void;
 }
 
@@ -104,6 +108,7 @@ export const Chessboard = memo(function Chessboard({
   size,
   interactive = false,
   lastMove = null,
+  hintArrow = null,
   onMove,
 }: ChessboardProps) {
   const squareSize = size / 8;
@@ -498,6 +503,14 @@ export const Chessboard = memo(function Chessboard({
             height={size}
             style={styles.pieceLayer}
             pointerEvents="none">
+            {hintArrow ? (
+              <HintArrow
+                from={hintArrow.from}
+                to={hintArrow.to}
+                orientation={orientation}
+                squareSize={squareSize}
+              />
+            ) : null}
             <Coordinates orientation={orientation} squareSize={squareSize} />
           </Svg>
         </View>
@@ -577,6 +590,59 @@ function TravelingPiece({
       style={[styles.dragLayer, { width: squareSize, height: squareSize }, style]}>
       <Piece type={travel.type} color={travel.color} size={squareSize} x={0} y={0} />
     </Animated.View>
+  );
+}
+
+/** Flèche pleine et translucide, centre à centre, pointant vers la case attendue. */
+function HintArrow({
+  from,
+  to,
+  orientation,
+  squareSize,
+}: {
+  from: Square;
+  to: Square;
+  orientation: Color;
+  squareSize: number;
+}) {
+  const start = squareToPoint(from, orientation, squareSize);
+  const end = squareToPoint(to, orientation, squareSize);
+  const x1 = start.x + squareSize / 2;
+  const y1 = start.y + squareSize / 2;
+  const x2 = end.x + squareSize / 2;
+  const y2 = end.y + squareSize / 2;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.hypot(dx, dy);
+  if (length < 1) return null;
+
+  const angle = Math.atan2(dy, dx);
+  const headLength = squareSize * 0.38;
+  const headWidth = squareSize * 0.32;
+  // Le trait s'arrête au pied de la pointe, sinon il déborde dessous.
+  const shaftEndX = x2 - Math.cos(angle) * headLength;
+  const shaftEndY = y2 - Math.sin(angle) * headLength;
+  const leftX = shaftEndX + Math.cos(angle + Math.PI / 2) * (headWidth / 2);
+  const leftY = shaftEndY + Math.sin(angle + Math.PI / 2) * (headWidth / 2);
+  const rightX = shaftEndX + Math.cos(angle - Math.PI / 2) * (headWidth / 2);
+  const rightY = shaftEndY + Math.sin(angle - Math.PI / 2) * (headWidth / 2);
+
+  return (
+    <>
+      <Line
+        x1={x1}
+        y1={y1}
+        x2={shaftEndX}
+        y2={shaftEndY}
+        stroke={Colors.hintArrow}
+        strokeWidth={squareSize * 0.16}
+        strokeLinecap="round"
+      />
+      <Polygon
+        points={`${x2},${y2} ${leftX},${leftY} ${rightX},${rightY}`}
+        fill={Colors.hintArrow}
+      />
+    </>
   );
 }
 

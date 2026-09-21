@@ -7,7 +7,9 @@ import { fetchThemeStats } from '@/features/review/api';
 import { t, translateTheme } from '@/lib/i18n';
 import {
   AUTO_PLAY_LINE,
+  REVIEW_BOX_FILTER,
   REVIEW_THEME_FILTER,
+  SHOW_HINT_ARROW,
   SHOW_TREE_ZOOM_CONTROLS,
   SHUFFLE_QUEUE,
   useStoredFlag,
@@ -16,13 +18,16 @@ import {
 import { Spacing } from '@/theme/atelier';
 
 const ALL_THEMES = '';
+const ALL_BOXES = '';
 
 type Side = 'white' | 'black';
 
 export function SettingsScreen() {
   const [themeFilter, setThemeFilter] = useStoredValue(REVIEW_THEME_FILTER, ALL_THEMES);
+  const [boxFilter, setBoxFilter] = useStoredValue(REVIEW_BOX_FILTER, ALL_BOXES);
   const [shuffle, setShuffle] = useStoredFlag(SHUFFLE_QUEUE, false);
   const [autoPlayLine, setAutoPlayLine] = useStoredFlag(AUTO_PLAY_LINE, false);
+  const [showHintArrow, setShowHintArrow] = useStoredFlag(SHOW_HINT_ARROW, true);
   const [availableThemes, setAvailableThemes] = useState<string[]>([]);
   const [resetSide, setResetSide] = useState<Side>('white');
   const [resetting, setResetting] = useState(false);
@@ -43,6 +48,13 @@ export function SettingsScreen() {
   const themeOptions = [
     { value: ALL_THEMES, label: t('common.all') },
     ...availableThemes.map((theme) => ({ value: theme, label: translateTheme(theme) })),
+  ];
+
+  const boxOptions = [
+    { value: ALL_BOXES, label: t('settings.boxAll') },
+    { value: 'new', label: t('settings.boxNew') },
+    { value: 'unvalidated', label: t('settings.boxUnvalidated') },
+    { value: 'mastered', label: t('settings.boxMastered') },
   ];
 
   const orderOptions = [
@@ -101,6 +113,12 @@ export function SettingsScreen() {
           onChange={setThemeFilter}
         />
         <Select
+          label={t('settings.boxLabel')}
+          value={boxFilter}
+          options={boxOptions}
+          onChange={setBoxFilter}
+        />
+        <Select
           label={t('settings.orderLabel')}
           value={shuffle ? 'random' : 'game'}
           options={orderOptions}
@@ -110,6 +128,11 @@ export function SettingsScreen() {
           label={t('review.autoPlayLine')}
           value={autoPlayLine}
           onValueChange={setAutoPlayLine}
+        />
+        <Toggle
+          label={t('settings.showHintArrow')}
+          value={showHintArrow}
+          onValueChange={setShowHintArrow}
         />
       </Panel>
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { fetchDueMistakes } from '@/features/review/api';
+import { fetchDueMistakes, type BoxFilter } from '@/features/review/api';
 import { reorderPending, shuffled } from '@/features/review/queueOrder';
 import type { Mistake } from '@/lib/types';
 
@@ -13,6 +13,13 @@ export interface ReviewQueue {
   error: string | null;
   /** Passe à la carte suivante ; recharge la file une fois épuisée. */
   advance: () => void;
+  /**
+   * Remet une carte ratée en fin de file locale, avec son état à jour.
+   *
+   * Pas résolue une fois sans erreur = pas sortie de la file, indépendamment
+   * de la date à laquelle FSRS la reprogramme réellement en base.
+   */
+  requeue: (mistake: Mistake) => void;
   reload: () => void;
 }
 
@@ -26,7 +33,11 @@ export interface ReviewQueue {
  * `shuffle` bat le lot au lieu de le suivre dans l'ordre d'arrivée, qui
  * regroupe les cartes d'une même partie.
  */
-export function useReviewQueue(theme: string | null, shuffle = false): ReviewQueue {
+export function useReviewQueue(
+  theme: string | null,
+  shuffle = false,
+  boxFilter: BoxFilter = ''
+): ReviewQueue {
   const [queue, setQueue] = useState<Mistake[]>([]);
   const [index, setIndex] = useState(0);
   const [status, setStatus] = useState<Status>('loading');
@@ -49,7 +60,7 @@ export function useReviewQueue(theme: string | null, shuffle = false): ReviewQue
     setStatus('loading');
     setError(null);
     try {
-      const rows = await fetchDueMistakes(theme);
+      const rows = await fetchDueMistakes(theme, boxFilter);
       fetched.current = rows;
       setQueue(wanted.current ? shuffled(rows) : rows);
       setIndex(0);
@@ -58,7 +69,7 @@ export function useReviewQueue(theme: string | null, shuffle = false): ReviewQue
       setError(cause instanceof Error ? cause.message : String(cause));
       setStatus('error');
     }
-  }, [theme]);
+  }, [theme, boxFilter]);
 
   useEffect(() => {
     void load();
@@ -81,12 +92,17 @@ export function useReviewQueue(theme: string | null, shuffle = false): ReviewQue
     });
   }, [queue.length, load]);
 
+  const requeue = useCallback((mistake: Mistake) => {
+    setQueue((previous) => [...previous, mistake]);
+  }, []);
+
   return {
     current: queue[index] ?? null,
     remaining: Math.max(queue.length - index, 0),
     status,
     error,
     advance,
+    requeue,
     reload: () => void load(),
   };
 }

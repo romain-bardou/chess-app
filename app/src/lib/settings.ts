@@ -15,8 +15,17 @@ export const AUTO_PLAY_LINE = 'autoPlayLine';
 /** Bat le lot de révision au lieu de suivre l'ordre des parties. */
 export const SHUFFLE_QUEUE = 'shuffleQueue';
 
+/** Flèche indiquant le coup attendu après un coup raté, en Révision et Ouvertures. */
+export const SHOW_HINT_ARROW = 'showHintArrow';
+
 /** Thème sur lequel filtrer la file de révision par défaut ; vide = tous. */
 export const REVIEW_THEME_FILTER = 'reviewThemeFilter';
+
+/**
+ * Boîte sur laquelle filtrer la file de révision ; vide = new+unvalidated+validated
+ * (mastered n'apparaît que si on le choisit explicitement).
+ */
+export const REVIEW_BOX_FILTER = 'reviewBoxFilter';
 
 /** Boutons +/− et pourcentage sur l'arbre de répertoire ; masqués, seul le
  * pincement zoome encore. */

@@ -6,7 +6,6 @@ import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { AppText, EmptyState, Loader, Screen, Select } from '@/components/ui';
 import { fetchRepertoireTree } from '@/features/repertoire/api';
 import { TreeDiagram, TreeLegend } from '@/features/repertoire/TreeDiagram';
-import { computeEffectiveStatuses } from '@/features/repertoire/tree';
 import { t } from '@/lib/i18n';
 import type { RepertoireNode } from '@/lib/types';
 import { Colors, Radius, Spacing } from '@/theme/atelier';
@@ -49,11 +48,8 @@ export function TreeScreen() {
   // Une variante = une fin de ligne (`is_book_end`) ; "complétée" reprend
   // exactement le critère du ✓ affiché dans l'arbre (voir TreeDiagram).
   const { completed, total } = useMemo(() => {
-    const statuses = computeEffectiveStatuses(nodes);
     const bookEnds = nodes.filter((node) => node.is_book_end);
-    const done = bookEnds.filter(
-      (node) => statuses.get(node.id) === 'learned' && node.clean
-    ).length;
+    const done = bookEnds.filter((node) => node.box === 'mastered').length;
     return { completed: done, total: bookEnds.length };
   }, [nodes]);
 

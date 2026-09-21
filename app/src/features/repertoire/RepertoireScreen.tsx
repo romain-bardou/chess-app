@@ -10,15 +10,15 @@ import { fetchRepertoireTree, saveRepertoireReview } from '@/features/repertoire
 import {
   ROOT,
   ancestorPath,
-  computeEffectiveStatuses,
   groupByParent,
   pickMyNode,
   pickOpponentNode,
   sideToMoveAt,
 } from '@/features/repertoire/tree';
 import { useLineReplay } from '@/features/review/useLineReplay';
-import { reviewRepertoireNode } from '@/lib/fsrs';
+import { nextBox, reviewRepertoireNode } from '@/lib/fsrs';
 import { t } from '@/lib/i18n';
+import { SHOW_HINT_ARROW, useStoredFlag } from '@/lib/settings';
 import type { RepertoireNode } from '@/lib/types';
 import { Colors, Radius, Spacing } from '@/theme/atelier';
 
@@ -39,16 +39,13 @@ function rollColor(mode: Mode): Color {
   return Math.random() < 0.5 ? 'white' : 'black';
 }
 
-/** Fins de ligne dont le statut correspond au filtre (même critère que
- * l'arbre : status FSRS effectif "acquis" + `clean`, voir TreeDiagram). */
+/** Fins de ligne dont la boîte correspond au filtre (voir `ReviewBox`). */
 function eligibleLeaves(nodes: RepertoireNode[], filter: VariantFilter): RepertoireNode[] {
   const bookEnds = nodes.filter((node) => node.is_book_end);
   if (filter === 'all') return bookEnds;
-  const statuses = computeEffectiveStatuses(nodes);
-  return bookEnds.filter((node) => {
-    const mastered = statuses.get(node.id) === 'learned' && node.clean;
-    return filter === 'mastered' ? mastered : !mastered;
-  });
+  return bookEnds.filter((node) =>
+    filter === 'mastered' ? node.box === 'mastered' : node.box !== 'mastered'
+  );
 }
 
 /** Chaîne complète racine→feuille (feuille incluse), pour forcer le
@@ -106,7 +103,7 @@ export function RepertoireScreen() {
   // Pas un state : ne doit jamais provoquer de re-render, seulement être lu
   // au moment où la ligne se termine. Vrai dès qu'une erreur ou un
   // Recommencer a eu lieu depuis la carte courante — la fin de variante
-  // atteinte ensuite ne compte alors pas comme « maîtrisée » (clean=false).
+  // atteinte ensuite renvoie alors la boîte en `unvalidated`.
   const runTaintedRef = useRef(false);
 
   const childrenMap = useMemo(() => groupByParent(nodes), [nodes]);
@@ -188,8 +185,8 @@ export function RepertoireScreen() {
     }
     appliedStartRef.current = true;
     // On saute directement au parent de ce nœud : on n'a pas prouvé le reste
-    // de la variante depuis le début, donc l'atteindre ne doit jamais la
-    // valider comme maîtrisée dans l'arbre (voir le blocage "clean" plus bas).
+    // de la variante depuis le début, donc l'atteindre ne doit jamais faire
+    // avancer sa boîte (voir le blocage `runTaintedRef` plus bas).
     runTaintedRef.current = true;
     const chain = ancestorPath(nodes, startNodeId);
     setScriptedPicks(buildScript(chain));
@@ -205,13 +202,14 @@ export function RepertoireScreen() {
       return;
     }
     if (currentChildren.length === 0) {
-      // Fin de variante : n'enregistre "clean" (maîtrisée) que si on l'a
-      // atteinte d'une traite depuis la carte courante, sans erreur ni
-      // Recommencer. Un Recommencer la remet à false même si le nœud avait
-      // déjà été marqué clean par une tentative précédente.
+      // Fin de variante : la boîte n'avance que si on l'a atteinte d'une
+      // traite depuis la carte courante, sans erreur ni Recommencer — un
+      // Recommencer renvoie en `unvalidated` même si la feuille était déjà
+      // `validated`/`mastered` d'une tentative précédente.
       const leaf = path[path.length - 1];
       if (leaf) {
-        saveRepertoireReview(leaf.id, { clean: !runTaintedRef.current }).catch(() => {});
+        const correct = !runTaintedRef.current;
+        saveRepertoireReview(leaf.id, { box: nextBox(leaf.box, correct) }).catch(() => {});
       }
       setPhase('done');
       return;
@@ -320,6 +318,15 @@ export function RepertoireScreen() {
     initialStep: replayMoves.length,
   });
 
+  const [showHintArrow] = useStoredFlag(SHOW_HINT_ARROW, true);
+  // Flèche pleine du coup attendu, cachée dès qu'on quitte la position ratée
+  // (exploration à la main) — elle pointerait alors sur la mauvaise case.
+  const hintArrow = useMemo(() => {
+    if (!showHintArrow || phase !== 'wrong' || !wrongInfo?.target.move_san) return null;
+    if (replay.frame.fen !== wrongInfo.target.fen) return null;
+    return playMove(wrongInfo.target.fen, wrongInfo.target.move_san)?.lastMove ?? null;
+  }, [showHintArrow, phase, wrongInfo, replay.frame.fen]);
+
   const { width } = useWindowDimensions();
   const boardSize = Math.min(width - Spacing.md * 2, MAX_BOARD_SIZE);
 
@@ -388,6 +395,7 @@ export function RepertoireScreen() {
           size={boardSize}
           interactive={phase === 'walking' ? myTurnNow : true}
           lastMove={board.lastMove}
+          hintArrow={hintArrow}
           onMove={phase === 'walking' ? handleMove : replay.explore}
         />
       </View>

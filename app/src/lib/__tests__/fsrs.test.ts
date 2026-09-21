@@ -3,6 +3,7 @@ import { Rating } from 'ts-fsrs';
 import {
   expectedSeconds,
   gradeAttempt,
+  nextBox,
   reviewMistake,
   serializeCard,
 } from '@/lib/fsrs';
@@ -35,6 +36,7 @@ function makeMistake(overrides: Partial<Mistake> = {}): Mistake {
     times_seen: 0,
     times_correct: 0,
     times_incorrect: 0,
+    box: 'new',
     ...overrides,
   };
 }
@@ -66,6 +68,25 @@ describe('gradeAttempt', () => {
 
   it('note Hard au-delà de 120 %', () => {
     expect(gradeAttempt(true, 30, plies)).toBe(Rating.Hard);
+  });
+});
+
+describe('nextBox', () => {
+  it('renvoie en unvalidated après un échec, quelle que soit la boîte de départ', () => {
+    expect(nextBox('new', false)).toBe('unvalidated');
+    expect(nextBox('unvalidated', false)).toBe('unvalidated');
+    expect(nextBox('validated', false)).toBe('unvalidated');
+    expect(nextBox('mastered', false)).toBe('unvalidated');
+  });
+
+  it('fait grimper new/unvalidated à validated après une réussite', () => {
+    expect(nextBox('new', true)).toBe('validated');
+    expect(nextBox('unvalidated', true)).toBe('validated');
+  });
+
+  it('fait grimper validated à mastered, qui y reste', () => {
+    expect(nextBox('validated', true)).toBe('mastered');
+    expect(nextBox('mastered', true)).toBe('mastered');
   });
 });
 

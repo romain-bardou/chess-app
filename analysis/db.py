@@ -158,21 +158,15 @@ class Supabase:
         )
         response.raise_for_status()
 
-    def delete_stale_unseen_mistakes(
-        self, game_id: str, kept_plies: List[int]
-    ) -> int:
-        """Supprime les cartes jamais révisées d'une partie que la réanalyse
-        n'a pas reproduites. Retourne le nombre supprimé.
+    def delete_stale_mistakes(self, game_id: str, kept_plies: List[int]) -> int:
+        """Supprime les cartes d'une partie que la réanalyse n'a pas
+        reproduites, qu'elles aient été révisées ou non. Retourne le nombre
+        supprimé.
 
-        Une carte déjà vue (`times_seen > 0`) est conservée quoi qu'il arrive :
-        elle porte un historique FSRS que l'utilisateur ne doit pas perdre à
-        cause d'un changement de logique.
+        Une carte qui n'est plus produite par la logique courante n'est plus un
+        bon puzzle : son historique de révision ne justifie pas de la garder.
         """
-        params = {
-            "game_id": f"eq.{game_id}",
-            "times_seen": "eq.0",
-            "select": "id",
-        }
+        params = {"game_id": f"eq.{game_id}", "select": "id"}
         if kept_plies:
             params["ply_number"] = f"not.in.({','.join(str(p) for p in kept_plies)})"
         response = self._client.delete(

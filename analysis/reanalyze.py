@@ -7,12 +7,9 @@ attendre de nouvelles parties. Chaque partie n'est reprise qu'une fois par
 lancement de ce script : le curseur `reanalyzed_at` avance à mesure, on peut
 donc le relancer à volonté, un petit lot à la fois.
 
-Une carte déjà en base garde son historique FSRS (voir
+Une carte que la logique actuelle reproduit garde son historique FSRS (voir
 `Supabase.upsert_mistakes_preserving_fsrs`) : seule sa solution/évaluation est
-remplacée. Une carte que la logique actuelle ne reproduit plus est supprimée
-si elle n'a jamais été révisée (`times_seen = 0`) ; si elle l'a été, elle est
-conservée, faute de pouvoir distinguer « n'est plus une erreur » de « n'est
-plus détectable » sans risquer de perdre un historique de révision.
+remplacée. Une carte qu'elle ne reproduit plus est supprimée, révisée ou non.
 """
 from __future__ import annotations
 
@@ -50,7 +47,7 @@ def run() -> int:
                 try:
                     rows = analyse_game(engine, database, config, game_row)
                     database.upsert_mistakes_preserving_fsrs(rows)
-                    removed = database.delete_stale_unseen_mistakes(
+                    removed = database.delete_stale_mistakes(
                         game_row["id"], [row["ply_number"] for row in rows]
                     )
                     database.mark_reanalyzed(game_row["id"])

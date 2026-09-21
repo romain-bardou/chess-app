@@ -7,14 +7,16 @@ main quand LICHESS_RATING_BAND doit monter avec l'elo (rejouable, upsert sur
 Deux répertoires fixes, choisis par Romain plutôt que dérivés des données :
 Écossaise aux Blancs, Caro-Kann aux Noirs. `entry` fige les coups qui
 amènent à la position de départ de chaque répertoire ; au-delà, l'arbre est
-construit depuis le Lichess Opening Explorer.
+construit depuis le Lichess Opening Explorer (coups adverses) et Stockfish
+(nos coups).
 
 Arbre en alternance stricte : CHAQUE demi-coup a sa ligne, y compris ceux de
 l'adversaire — c'est ce qu'attend l'écran Ouvertures de l'app
 (`app/src/features/repertoire/tree.ts` détermine qui a le trait en lisant le
 FEN de chaque ligne, et déroule un coup à la fois). Sur nos coups, un seul
-choix (le plus joué) ; sur les coups adverses, une ligne par réponse
-au-dessus du seuil de popularité — on doit être prêt à chacune.
+choix : le meilleur coup de Stockfish (profondeur fixe, donc reproductible —
+`REPERTOIRE_ENGINE_DEPTH`, 18 par défaut) ; sur les coups adverses, une ligne
+par réponse au-dessus du seuil de popularité — on doit être prêt à chacune.
 
 Convention `fen` = position AVANT le coup de la ligne (voir 001_init.sql et
 le commentaire d'`is_book_move` dans db.py) : la ligne d'un coup adverse
@@ -23,8 +25,10 @@ porte donc le FEN d'après notre propre coup.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import uuid
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 import chess
@@ -32,6 +36,7 @@ import chess
 import lichess
 from config import Config
 from db import Supabase
+from engine import Engine
 from lichess import LichessExplorer
 
 logging.basicConfig(
@@ -57,6 +62,18 @@ REPERTOIRE = [
         # au seuil, il est exclu par construction (voir `entry` plus haut,
         # qui fige 1...e5 sans interroger Lichess — l'Écossaise répond à
         # 1...e5, pas à 1...d5, qui demanderait un répertoire séparé).
+        "popularity_threshold": 0.10,
+    },
+    {
+        # Réponse aux Blancs contre 1...d5 : partage la racine 1.e4 avec
+        # l'Écossaise (même camp, même coup d'entrée) et s'en distingue par la
+        # réponse adverse assumée. Mêmes réglages que l'Écossaise (seuil 10 %).
+        "name": "Scandinave",
+        "side": "white",
+        "entry": [
+            ("e4", True),
+            ("d5", False),
+        ],
         "popularity_threshold": 0.10,
     },
     {
@@ -158,8 +175,18 @@ def insert_opponent_replies(
     return children
 
 
+def best_engine_move(engine: Any, board: chess.Board) -> Optional[str]:
+    """Le meilleur coup de Stockfish à `board`, en SAN (None si position
+    terminale)."""
+    candidates = engine.analyse(board, multipv=1, deep=True)
+    if not candidates:
+        return None
+    return board.san(candidates[0].move)
+
+
 def expand_our_move(
     explorer: LichessExplorer,
+    engine: Any,
     database: Any,
     board: chess.Board,
     side: str,
@@ -181,26 +208,25 @@ def expand_our_move(
         return
     visited.add(fen_before)
 
-    response = explorer.lookup(fen_before)
-    move = lichess.top_move(response)
-    if move is None:
+    move_san = best_engine_move(engine, board)
+    if move_san is None:
         return
 
     our_node_id = database.upsert_repertoire_node(
         {
             "fen": fen_before,
-            "move_san": move["san"],
+            "move_san": move_san,
             "side": side,
             "parent_node_id": parent_id,
-            "source": "lichess",
+            "source": "engine",
             "popularity": None,
             "is_book_end": False,
         }
     )
-    log.info("%-6s %s", side, move["san"])
+    log.info("%-6s %s", side, move_san)
 
     board_after = board.copy()
-    board_after.push_san(move["san"])
+    board_after.push_san(move_san)
     new_count = our_move_count + 1
 
     opponent_children = insert_opponent_replies(
@@ -208,7 +234,8 @@ def expand_our_move(
     )
     for child_board, opp_node_id in opponent_children:
         expand_our_move(
-            explorer, database, child_board, side, opp_node_id, new_count, config, visited, threshold
+            explorer, engine, database, child_board, side, opp_node_id, new_count,
+            config, visited, threshold,
         )
 
 
@@ -241,7 +268,11 @@ def seed_entry(database: Any, spec: Dict[str, Any]) -> Tuple[chess.Board, Option
 
 
 def build(
-    explorer: LichessExplorer, database: Any, spec: Dict[str, Any], config: Config
+    explorer: LichessExplorer,
+    engine: Any,
+    database: Any,
+    spec: Dict[str, Any],
+    config: Config,
 ) -> None:
     log.info("=== %s (%s) ===", spec["name"], spec["side"])
     threshold = spec.get("popularity_threshold", config.repertoire_popularity_threshold)
@@ -249,12 +280,24 @@ def build(
     our_move_count = sum(1 for _, is_ours in spec["entry"] if is_ours)
     visited: set = set()
 
+    # Une entrée qui finit sur le coup adverse (Scandinave : 1.e4 d5) laisse
+    # le trait à nous : on choisit notre coup tout de suite, sans quoi les
+    # coups « adverses » lus sur Lichess seraient en fait les nôtres.
+    our_turn = board.turn == (chess.WHITE if spec["side"] == "white" else chess.BLACK)
+    if our_turn:
+        expand_our_move(
+            explorer, engine, database, board, spec["side"], parent_id,
+            our_move_count, config, visited, threshold,
+        )
+        return
+
     opponent_children = insert_opponent_replies(
         explorer, database, board, parent_id, spec["side"], our_move_count, config, threshold
     )
     for child_board, opp_node_id in opponent_children:
         expand_our_move(
             explorer,
+            engine,
             database,
             child_board,
             spec["side"],
@@ -308,6 +351,31 @@ def rows_to_sql(rows: List[Dict[str, Any]]) -> str:
     )
 
 
+def stale_nodes_sql(rows: List[Dict[str, Any]]) -> str:
+    """DELETE des lignes d'un camp qui ne figurent plus dans l'arbre généré.
+
+    Un upsert ne retire rien : après un changement de coup de notre côté,
+    l'ancien coup resterait en base à côté du nouveau, et l'écran Ouvertures
+    proposerait deux coups à la même position. `parent_node_id` est en
+    `on delete cascade` : supprimer un coup périmé emporte son sous-arbre, sauf
+    les lignes qui viennent d'être rattachées à un nouveau parent par l'upsert
+    (transposition). Les progrès FSRS/box des lignes supprimées sont perdus ;
+    ceux des lignes conservées (même fen, move_san, side) sont préservés.
+    """
+    statements = []
+    for side in sorted({row["side"] for row in rows}):
+        keys = ("," + "\n    ").join(
+            f"({_sql_literal(row['fen'])}, {_sql_literal(row['move_san'])})"
+            for row in rows
+            if row["side"] == side
+        )
+        statements.append(
+            f"delete from repertoire_nodes\nwhere side = {_sql_literal(side)}\n"
+            f"  and (fen, move_san) not in (\n    {keys}\n  );\n"
+        )
+    return "\n".join(statements)
+
+
 def print_tree(rows: List[Dict[str, Any]]) -> None:
     by_parent: Dict[Optional[str], List[Dict[str, Any]]] = {}
     for row in rows:
@@ -343,13 +411,30 @@ def run() -> int:
     if only and not specs:
         raise SystemExit(f"--only {only!r} ne correspond à aucun répertoire connu.")
 
+    prune = "--prune" in sys.argv
+    if prune and not sql_out:
+        raise SystemExit("--prune n'a de sens qu'avec --sql-out.")
+
+    # Profondeur seule, sans limite de temps effective : le coup choisi ne
+    # dépend pas de la charge de la machine, donc l'arbre est reproductible.
+    depth = int(os.environ.get("REPERTOIRE_ENGINE_DEPTH", "18"))
+    engine_config = SimpleNamespace(
+        stockfish_path=config.stockfish_path,
+        threads=config.threads,
+        hash_mb=config.hash_mb,
+        movetime_ms=600_000,
+        depth=depth,
+        verify_movetime_ms=600_000,
+        verify_depth=depth,
+    )
+
     with LichessExplorer(
         config.lichess_api_token, config.lichess_speeds, config.lichess_rating_band
-    ) as explorer:
+    ) as explorer, Engine(engine_config) as engine:  # type: ignore[arg-type]
         if dry_run or sql_out:
             sink = MemorySink()
             for spec in specs:
-                build(explorer, sink, spec, config)
+                build(explorer, engine, sink, spec, config)
             finalize_book_ends(sink.rows)
 
             if dry_run:
@@ -358,13 +443,19 @@ def run() -> int:
 
             with open(sql_out, "w", encoding="utf-8") as handle:
                 handle.write(rows_to_sql(sink.rows))
+                if prune:
+                    handle.write(
+                        "\n-- Lignes périmées (ancien coup remplacé) : DESTRUCTIF, emporte\n"
+                        "-- aussi leur progression FSRS. À exécuter après l'upsert ci-dessus.\n"
+                    )
+                    handle.write(stale_nodes_sql(sink.rows))
             log.info("%d ligne(s) écrite(s) dans %s.", len(sink.rows), sql_out)
             return 0
 
         with Supabase(config) as database:
             database.owner_id  # échoue tôt si app_owner n'est pas renseignée
             for spec in specs:
-                build(explorer, database, spec, config)
+                build(explorer, engine, database, spec, config)
 
     return 0
 

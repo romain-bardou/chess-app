@@ -6,7 +6,8 @@ import { Chessboard, type BoardMove } from '@/chess/Chessboard';
 import { playMove, type Position } from '@/chess/play';
 import { ReplayControls } from '@/components/ReplayControls';
 import { AppText, Button, EmptyState, Loader, Panel, Screen, Select } from '@/components/ui';
-import { fetchRepertoireTree, saveRepertoireReview } from '@/features/repertoire/api';
+import { fetchOpeningTree, saveRepertoireReview } from '@/features/repertoire/api';
+import { OPENINGS, OPENING_IDS, isOpening, type Opening } from '@/features/repertoire/openings';
 import {
   ROOT,
   ancestorPath,
@@ -28,15 +29,15 @@ const MAX_BOARD_SIZE = 440;
 const OPPONENT_DELAY_MS = 450;
 
 type Color = 'white' | 'black';
-type Mode = Color | 'random';
+type Mode = Opening | 'random';
 type Phase = 'walking' | 'wrong' | 'done';
 type TreeStatus = 'idle' | 'loading' | 'ready' | 'error';
 type VariantFilter = 'all' | 'unmastered' | 'mastered';
 
-/** Tire un camp pour la prochaine carte. Fixe si `mode` est un camp donné. */
-function rollColor(mode: Mode): Color {
+/** Tire l'ouverture de la prochaine carte. Fixe si `mode` est une ouverture donnée. */
+function rollOpening(mode: Mode): Opening {
   if (mode !== 'random') return mode;
-  return Math.random() < 0.5 ? 'white' : 'black';
+  return OPENING_IDS[Math.floor(Math.random() * OPENING_IDS.length)];
 }
 
 /** Fins de ligne dont la boîte correspond au filtre (voir `ReviewBox`). */
@@ -75,13 +76,14 @@ function buildScript(path: RepertoireNode[]): Map<string, RepertoireNode> {
 export function RepertoireScreen() {
   // Venue d'un tap sur une branche de l'arbre : rejoue cette carte précise
   // plutôt que de tirer une ligne depuis le début.
-  const params = useLocalSearchParams<{ nodeId?: string; side?: string }>();
+  const params = useLocalSearchParams<{ nodeId?: string; opening?: string }>();
   const startNodeId = params.nodeId;
-  const startSide: Color = params.side === 'black' ? 'black' : 'white';
+  const startOpening: Opening = isOpening(params.opening) ? params.opening : 'scotch';
   const appliedStartRef = useRef(false);
 
-  const [mode, setMode] = useState<Mode>(startNodeId ? startSide : 'white');
-  const [color, setColor] = useState<Color | null>(null);
+  const [mode, setMode] = useState<Mode>(startNodeId ? startOpening : 'scotch');
+  const [opening, setOpening] = useState<Opening | null>(null);
+  const color: Color | null = opening ? OPENINGS[opening].side : null;
   const [nodes, setNodes] = useState<RepertoireNode[]>([]);
   const [treeStatus, setTreeStatus] = useState<TreeStatus>('idle');
   const [treeError, setTreeError] = useState<string | null>(null);
@@ -139,9 +141,9 @@ export function RepertoireScreen() {
     setFilterEmpty(false);
   }, []);
 
-  const pickColor = useCallback(
-    (next: Color) => {
-      setColor(next);
+  const pickOpening = useCallback(
+    (next: Opening) => {
+      setOpening(next);
       setScriptedPicks(null);
       setPath([]);
       setPhase('walking');
@@ -153,7 +155,7 @@ export function RepertoireScreen() {
       runTaintedRef.current = false;
       setTreeStatus('loading');
       setTreeError(null);
-      fetchRepertoireTree(next)
+      fetchOpeningTree(next)
         .then((rows) => {
           setNodes(rows);
           setTreeStatus('ready');
@@ -167,12 +169,12 @@ export function RepertoireScreen() {
     [variantFilter, applyFilterSelection]
   );
 
-  // Première carte au montage, sur le camp par défaut ("Blancs") : le menu
-  // déroulant a toujours une valeur, pas de bouton à taper avant de démarrer.
+  // Première carte au montage, sur l'ouverture par défaut ("Écossaise") : le
+  // menu déroulant a toujours une valeur, pas de bouton à taper avant de démarrer.
   // Volontairement une seule fois : le Select et "Suivante" relancent une
   // carte explicitement, cet effet ne doit pas les redéclencher.
   useEffect(() => {
-    pickColor(startNodeId ? startSide : rollColor(mode));
+    pickOpening(startNodeId ? startOpening : rollOpening(mode));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -277,11 +279,11 @@ export function RepertoireScreen() {
   }, [path]);
 
   const handleNext = useCallback(() => {
-    // Camp aléatoire : chaque nouvelle carte retire un camp, pas seulement
-    // une nouvelle réponse adverse — on repart via pickColor (recharge
-    // l'arbre si besoin) plutôt que du simple reset ci-dessous.
+    // Ouverture aléatoire : chaque nouvelle carte retire une ouverture, pas
+    // seulement une nouvelle réponse adverse — on repart via pickOpening
+    // (recharge l'arbre si besoin) plutôt que du simple reset ci-dessous.
     if (mode === 'random') {
-      pickColor(rollColor('random'));
+      pickOpening(rollOpening('random'));
       return;
     }
     setPath([]);
@@ -291,7 +293,7 @@ export function RepertoireScreen() {
     setVariantOpen(false);
     runTaintedRef.current = false;
     applyFilterSelection(variantFilter, nodes);
-  }, [mode, pickColor, variantFilter, nodes, applyFilterSelection]);
+  }, [mode, pickOpening, variantFilter, nodes, applyFilterSelection]);
 
   // Position atteinte en suivant la ligne jouée : chaque nœud ne stocke que
   // la position d'avant son propre coup, donc on les rejoue depuis le début.
@@ -344,13 +346,12 @@ export function RepertoireScreen() {
           value={mode}
           hideLabel
           options={[
-            { value: 'white', label: t('openings.scotch') },
-            { value: 'black', label: t('openings.caroKann') },
+            ...OPENING_IDS.map((id) => ({ value: id, label: t(OPENINGS[id].labelKey) })),
             { value: 'random', label: t('openings.chooseRandom') },
           ]}
           onChange={(next) => {
             setMode(next);
-            pickColor(rollColor(next));
+            pickOpening(rollOpening(next));
           }}
           style={styles.pillButton}
         />
@@ -411,13 +412,13 @@ export function RepertoireScreen() {
         <EmptyState
           title={t('common.error')}
           body={treeError ?? ''}
-          action={<Button label={t('common.retry')} onPress={() => pickColor(color)} />}
+          action={<Button label={t('common.retry')} onPress={() => opening && pickOpening(opening)} />}
         />
       ) : nodes.length === 0 ? (
         <EmptyState
           title={t('openings.emptyTitle')}
           body={t('openings.emptyBody')}
-          action={<Button label={t('common.retry')} onPress={() => pickColor(color)} />}
+          action={<Button label={t('common.retry')} onPress={() => opening && pickOpening(opening)} />}
         />
       ) : phase === 'walking' ? (
         <AppText muted style={styles.prompt}>

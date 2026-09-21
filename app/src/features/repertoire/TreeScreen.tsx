@@ -4,17 +4,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View, useWindowDimensions } from 'react-native';
 
 import { AppText, EmptyState, Loader, Screen, Select } from '@/components/ui';
-import { fetchRepertoireTree } from '@/features/repertoire/api';
+import { fetchOpeningTree } from '@/features/repertoire/api';
+import { OPENINGS, OPENING_IDS, type Opening } from '@/features/repertoire/openings';
 import { TreeDiagram, TreeLegend } from '@/features/repertoire/TreeDiagram';
 import { t } from '@/lib/i18n';
 import type { RepertoireNode } from '@/lib/types';
 import { Colors, Radius, Spacing } from '@/theme/atelier';
 
-type Side = 'white' | 'black';
-
 export function TreeScreen() {
   const router = useRouter();
-  const [side, setSide] = useState<Side>('white');
+  const [opening, setOpening] = useState<Opening>('scotch');
   const [nodes, setNodes] = useState<RepertoireNode[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -24,10 +23,10 @@ export function TreeScreen() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
-  const load = useCallback((next: Side) => {
+  const load = useCallback((next: Opening) => {
     setStatus('loading');
     setError(null);
-    fetchRepertoireTree(next)
+    fetchOpeningTree(next)
       .then((rows) => {
         setNodes(rows);
         setStatus('ready');
@@ -42,7 +41,7 @@ export function TreeScreen() {
   // via le Select, pas besoin d'un rechargement au retour sur l'écran comme
   // les stats (l'arbre ne change pas pendant une session de révision).
   useEffect(() => {
-    load(side);
+    load(opening);
   }, []);
 
   // Une variante = une fin de ligne (`is_book_end`) ; "complétée" reprend
@@ -73,14 +72,11 @@ export function TreeScreen() {
           </AppText>
           <Select
             label={t('openings.repertoireLabel')}
-            value={side}
+            value={opening}
             hideLabel
-            options={[
-              { value: 'white', label: t('openings.scotch') },
-              { value: 'black', label: t('openings.caroKann') },
-            ]}
+            options={OPENING_IDS.map((id) => ({ value: id, label: t(OPENINGS[id].labelKey) }))}
             onChange={(next) => {
-              setSide(next);
+              setOpening(next);
               load(next);
             }}
             style={[styles.headerButton, isLandscape && styles.headerButtonCompact]}
@@ -105,7 +101,7 @@ export function TreeScreen() {
           <TreeDiagram
             nodes={nodes}
             onSelectNode={(node) =>
-              router.push({ pathname: '/openings', params: { nodeId: node.id, side } })
+              router.push({ pathname: '/openings', params: { nodeId: node.id, opening } })
             }
           />
         </View>

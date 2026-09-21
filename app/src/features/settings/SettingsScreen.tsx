@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Alert, StyleSheet } from 'react-native';
 
 import { AppText, Button, Panel, Screen, Select, Toggle } from '@/components/ui';
-import { resetRepertoireProgress } from '@/features/repertoire/api';
+import { resetOpeningProgress, resetRepertoireProgress } from '@/features/repertoire/api';
+import { OPENINGS, OPENING_IDS, type Opening } from '@/features/repertoire/openings';
 import { fetchThemeStats } from '@/features/review/api';
 import { t, translateTheme } from '@/lib/i18n';
 import {
@@ -20,8 +21,6 @@ import { Spacing } from '@/theme/atelier';
 const ALL_THEMES = '';
 const ALL_BOXES = '';
 
-type Side = 'white' | 'black';
-
 export function SettingsScreen() {
   const [themeFilter, setThemeFilter] = useStoredValue(REVIEW_THEME_FILTER, ALL_THEMES);
   const [boxFilter, setBoxFilter] = useStoredValue(REVIEW_BOX_FILTER, ALL_BOXES);
@@ -29,7 +28,7 @@ export function SettingsScreen() {
   const [autoPlayLine, setAutoPlayLine] = useStoredFlag(AUTO_PLAY_LINE, false);
   const [showHintArrow, setShowHintArrow] = useStoredFlag(SHOW_HINT_ARROW, true);
   const [availableThemes, setAvailableThemes] = useState<string[]>([]);
-  const [resetSide, setResetSide] = useState<Side>('white');
+  const [resetOpening, setResetOpening] = useState<Opening>('scotch');
   const [resetting, setResetting] = useState(false);
   const [showTreeZoomControls, setShowTreeZoomControls] = useStoredFlag(
     SHOW_TREE_ZOOM_CONTROLS,
@@ -67,7 +66,7 @@ export function SettingsScreen() {
     const task =
       scope === 'all'
         ? Promise.all([resetRepertoireProgress('white'), resetRepertoireProgress('black')])
-        : resetRepertoireProgress(resetSide);
+        : resetOpeningProgress(resetOpening);
     task
       .catch((cause: unknown) =>
         Alert.alert(t('common.error'), cause instanceof Error ? cause.message : String(cause))
@@ -140,12 +139,9 @@ export function SettingsScreen() {
         <AppText variant="heading">{t('settings.repertoireSection')}</AppText>
         <Select
           label={t('openings.repertoireLabel')}
-          value={resetSide}
-          options={[
-            { value: 'white', label: t('openings.scotch') },
-            { value: 'black', label: t('openings.caroKann') },
-          ]}
-          onChange={setResetSide}
+          value={resetOpening}
+          options={OPENING_IDS.map((id) => ({ value: id, label: t(OPENINGS[id].labelKey) }))}
+          onChange={setResetOpening}
         />
         <Toggle
           label={t('settings.showTreeZoomControls')}

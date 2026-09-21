@@ -1,3 +1,4 @@
+import { OPENINGS, openingNodes, type Opening } from '@/features/repertoire/openings';
 import { supabase } from '@/lib/supabase';
 import type { BoxStats, RepertoireNode } from '@/lib/types';
 
@@ -16,6 +17,12 @@ export async function fetchRepertoireTree(
     .eq('side', side);
   if (error) throw error;
   return (data ?? []) as RepertoireNode[];
+}
+
+/** L'arbre d'une ouverture : celui de son camp, réduit à sa branche (voir `openingNodes`). */
+export async function fetchOpeningTree(opening: Opening): Promise<RepertoireNode[]> {
+  const rows = await fetchRepertoireTree(OPENINGS[opening].side);
+  return openingNodes(rows, opening);
 }
 
 /** Écrit le nouvel état FSRS après une tentative sur un nœud. */
@@ -70,4 +77,29 @@ export async function resetRepertoireProgress(side: 'white' | 'black'): Promise<
     })
     .eq('side', side);
   if (error) throw error;
+}
+
+/** Comme `resetRepertoireProgress`, limité à une ouverture. La racine 1.e4
+ * partagée entre deux ouvertures d'un même camp est remise à zéro avec. */
+export async function resetOpeningProgress(opening: Opening): Promise<void> {
+  const { side, firstReply } = OPENINGS[opening];
+  if (firstReply === null) {
+    await resetRepertoireProgress(side);
+    return;
+  }
+  const ids = (await fetchOpeningTree(opening)).map((node) => node.id);
+  // Par lots : une liste d'uuid dans l'URL a une taille limite.
+  for (let start = 0; start < ids.length; start += 100) {
+    const { error } = await supabase
+      .from('repertoire_nodes')
+      .update({
+        fsrs_stability: null,
+        fsrs_difficulty: null,
+        fsrs_due_at: null,
+        fsrs_card: null,
+        box: 'new',
+      })
+      .in('id', ids.slice(start, start + 100));
+    if (error) throw error;
+  }
 }
